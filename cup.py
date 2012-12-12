@@ -100,7 +100,7 @@ def application(environ, start_response):
         start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))])
         return [app_update(environ['SERVER_NAME']) ]
     if query == 'source':
-        start_response('200 OK', [('Content-type', 'text/plain')])
+        start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
         return [open(__file__, 'r', encoding='utf-8').read().encode('utf-8')]
     o = '<?xml version="1.0" encoding="utf-8"?>\n<html>\n' 
     o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
@@ -228,7 +228,7 @@ Vérifier que la somme totale en ⊔ n'a pas changé lors de l'achât d'un IG<br
 Vous pouvez vérifier que le revenu de l'auteur est croissant et aussi le remboursement des précédents acheteurs<br/>
 Remarquez que pour un artiste achetant ses propres créations, son solde ne change pas, seulement le prix courant décroit.</p></td>
 </tr></table>
-<p>! This simulation is hosted on a tiny <a href="http://pi.pelinnquin.fr/pi">RaspberryPi</a> with a low bandwidth personnal box.
+<p>! This simulation is hosted on a tiny <a href="http://pi.pelinquin.fr/u?pi">RaspberryPi</a> with a low bandwidth personnal box. see <a href="cup?source">Source code</a>.
 <h6>Contact: <mail>laurent.fournier@cupfoundation.net</mail><br/>
 ⊔FOUNDATION is currently registered in Toulouse/France  SIREN: 399 661 602 00025<br/></h6>\n"""
 
