@@ -228,6 +228,7 @@ Vérifier que la somme totale en ⊔ n'a pas changé lors de l'achât d'un IG<br
 Vous pouvez vérifier que le revenu de l'auteur est croissant et aussi le remboursement des précédents acheteurs<br/>
 Remarquez que pour un artiste achetant ses propres créations, son solde ne change pas, seulement le prix courant décroit.</p></td>
 </tr></table>
+<p>! This simulation is hosted on a tiny <a href="http://pi.pelinnquin.fr/pi">RaspberryPi</a> with a low bandwidth personnal box.
 <h6>Contact: <mail>laurent.fournier@cupfoundation.net</mail><br/>
 ⊔FOUNDATION is currently registered in Toulouse/France  SIREN: 399 661 602 00025<br/></h6>\n"""
 
