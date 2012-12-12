@@ -1,5 +1,23 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
+# Welcome to ⊔net!
+#-----------------------------------------------------------------------------
+#  © Copyright 2012 ⊔Foundation
+#    This file is part of ⊔net.
+#
+#    ⊔net is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    ⊔net is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with ⊔net.  If not, see <http://www.gnu.org/licenses/>.
+#-----------------------------------------------------------------------------
 
 import sys, re, os, math, random, urllib.parse, dbm, datetime, base64, hashlib, subprocess
 
@@ -186,7 +204,7 @@ def application(environ, start_response):
 
 def head():
     return """\n<title>The ⊔Foundation</title>
-<h1 title="the 'cup' Foundation">⊔<n1>Simulation</n1></h1>
+<h1 title="the 'cup' Foundation"><a href="http://www.cupfoundation.net/">⊔<n1>Simulation</n1></a></h1>
 <div class="logo"><svg xmlns="http://www.w3.org/2000/svg"><path stroke-width="0" fill="Dodgerblue" stroke="none" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></svg></div>\n"""
 
 def foot():
