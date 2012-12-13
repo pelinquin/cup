@@ -131,7 +131,11 @@ def application(environ, start_response):
         return [app_update(environ['SERVER_NAME']) ]
     if query == 'source':
         start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
-        return [open(__file__, 'r', encoding='utf-8').read().encode('utf-8')]
+        return [open(__file__, 'r', encoding='utf-8').read().encode('utf-8')] 
+    if query == 'reset':
+        subprocess.Popen(('rm','/u/net.db','/u/tax.db'),).communicate()
+        start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
+        return ['RESET DATABASE OK!'.encode('utf-8')]
     o = '<?xml version="1.0" encoding="utf-8"?>\n<html>\n' 
     o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
     o += '<link href="http://fonts.googleapis.com/css?family=Schoolbell" rel="stylesheet" type="text/css">\n' 
