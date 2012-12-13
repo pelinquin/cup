@@ -24,7 +24,7 @@ import sys, re, os, math, random, urllib.parse, dbm, datetime, base64, hashlib, 
 # constants defined by government banking authorities and should be very stable
 __cur_ratio__ = {'EUR':['€',0.731,0.820,0.923], 
                  'USD':['$',0.998,1.064,1.107], 
-                 'GBP':['£',0.651,0,664,0.702], 
+                 'GBP':['£',0.651,0.664,0.702], 
                  'JPY':['¥',85.204,87.740,88.632], 
                  'CNY':['Ұ',6.405,6.634,6.703],
                  }
