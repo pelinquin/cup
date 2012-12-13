@@ -21,6 +21,14 @@
 
 import sys, re, os, math, random, urllib.parse, dbm, datetime, base64, hashlib, subprocess
 
+# constants defined by government banking authorities and should be very stable
+__cur_ratio__ = {'EUR':['€',0.731,0.820,0.923], 
+                 'USD':['$',0.998,1.064,1.107], 
+                 'GBP':['£',0.651,0,664,0.702], 
+                 'JPY':['¥',85.204,87.740,88.632], 
+                 'CNY':['Ұ',6.405,6.634,6.703],
+                 }
+
 def style():
     return """<style type="text/css"> 
 h1,h2,h3,h4,h5,h6,input,a,p,td,th,fh6{font-family:helvetica neue,helvetica,arial,sans-serif;}
@@ -34,6 +42,7 @@ sc{font-variant: small-caps}
 a{text-decoration:none;}
 h1,a{color:Dodgerblue;}
 h6 {text-align:right;color:#CCC;background-color:#F4F4F4;}
+td.num {text-align:right;}
 fh6 {display:block;font-size:10; text-align:right;color:#AAA;}
 l {text-align:left;}
 p{padding-left:30;}
@@ -43,6 +52,27 @@ img {vertical-align:top;}
 table {border: 1px solid #666;width:100%;border-collapse:collapse;} 
 td,th {border: 1px solid #666;padding:2pt;}
 td.in:active {background-color:red;}
+
+.toggle p span { display: none;}
+.toggle { position: relative; padding: 0;margin-left: 80px;}
+.toggle label {position: relative;z-index: 3;display: block;width: 100%;}
+.toggle input {position: absolute;opacity: 0;z-index: 5;}
+.toggle p {position: absolute;left: -100px;width: 100%;margin: 0;padding-right: 10px;text-align: left;}
+.toggle p span {position: absolute;top: 0;left: 0;z-index: 5;display: block;width: 50%;margin-left: 100px;text-align: center;}
+.toggle p span:last-child { left: 50%; }
+.toggle .slide-button {position: absolute;right: 0;top: 0;z-index: 4;display: block;width: 50%;height: 100%;padding: 0;}
+.toggle{ display: block; height: 20px; }
+.toggle * {-webkit-box-sizing: border-box;-moz-box-sizing: border-box;-ms-box-sizing: border-box;-o-box-sizing: border-box;box-sizing: border-box;}
+.toggle .slide-button {display: block;-webkit-transition: all 0.3s ease-out;-moz-transition: all 0.3s ease-out;-ms-transition: all 0.3s ease-out;-o-transition: all 0.3s ease-out;transition: all 0.3s ease-out;}
+.toggle input:checked ~ .slide-button { right: 50%; }
+.toggle input:focus ~ .slide-button,
+.toggle { -webkit-animation: bugfix infinite 1s;}
+.candy {background-color: #2d3035;color: #fff;font-weight: bold;text-align: center;text-shadow: 1px 1px 1px #191b1e;border-radius: 3px;	box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3), 0 1px 0px rgba(255, 255, 255, 0.2);}
+.candy input:checked + label { color: #333; text-shadow: 0 1px 0 rgba(255,255,255,0.5);}
+.candy .slide-button {border: 1px solid #333;background-color: #70c66b;background-image: -webkit-linear-gradient(top, rgba(255, 255, 255, 0.2), rgba(0, 0, 0, 0));background-image:-moz-linear-gradient(top, rgba(255, 255, 255, 0.2), rgba(0, 0, 0, 0));background-image:     -ms-linear-gradient(top, rgba(255, 255, 255, 0.2), rgba(0, 0, 0, 0));background-image:-o-linear-gradient(top, rgba(255, 255, 255, 0.2), rgba(0, 0, 0, 0));background-image:linear-gradient(top, rgba(255, 255, 255, 0.2), rgba(0, 0, 0, 0));box-shadow: 0 1px 1px rgba(0, 0, 0, 0.2), inset 0 1px 1px rgba(255, 255, 255, 0.45);border-radius: 3px;}
+.candy p { color: #333; text-shadow: none; }
+.candy span { color: #fff; }
+
 </style>
 """
 
@@ -106,9 +136,6 @@ def application(environ, start_response):
     o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
     o += '<link href="http://fonts.googleapis.com/css?family=Schoolbell" rel="stylesheet" type="text/css">\n' 
     o += style() + script() + head()
-    o += '<form method="post"><table>\n'
-    m = None
-    o += '<tr><th width="100"><input name="adda" placeholder="Name" title="add new authors\'s name" size="10"/></th><th width="150">Balance</th><th>Created IGs</th><th>Bought IGs</th></tr>\n'
     hg, agents = {}, {}
     if os.path.isfile('/u/net.db'):
         d = dbm.open('/u/net')
@@ -118,25 +145,41 @@ def application(environ, start_response):
             for g in v[1]:
                 hg[g] = x
         d.close()
-    d = dbm.open('/u/net', 'c')
-    raw = None
+    if not os.path.isfile('/u/tax.db'):
+        dtax = dbm.open('/u/tax', 'c')
+        for x in __cur_ratio__: dtax[x] = '%s' % [0, 0.00]
+        dtax.close()
+    d, dtax = dbm.open('/u/net', 'c'), dbm.open('/u/tax', 'c')
+    raw, cb = None, None
     if environ['REQUEST_METHOD'].lower() == 'post':
         raw = environ['wsgi.input'].read().decode('utf-8')
-        m = re.match(r'adda=([^&]{2,16})(&|$)', raw)
+        m = re.match(r'adda=([^&]{2,16})&cur=(\w{3})(&cb=on|)', raw) # Name
         if m:
-            a = m.group(1)
+            a, cur, cb = m.group(1), m.group(2), m.group(3)
             if bytes(a, 'utf-8') not in agents:
                 now = '%s' % datetime.datetime.now()
-                d[a] = '%s' % [0, {}, {}, now[:-7]]
-        #m = re.match(r'adda=&([^&]{2,16})=%2B10%E2%8A%94$',raw)
-        m = re.match(r'adda=&([^&]{2,16})=%2B(10{0,2})$',raw)
+                d[a] = '%s' % [0, {}, {}, now[:-7], cur, 0]
+                vtax = eval (dtax[cur])
+                vtax[0] += 1
+                dtax[cur] = '%s' % vtax
+        m = re.match(r'adda=&cur=\w{3}&(cb=on&|)([^&]{2,16})=(10{0,2})$',raw) # +/-1,10,100
         if m:
-            v = eval(d[m.group(1)])
-            v[0] += int (m.group(2))
-            d[m.group(1)] = '%s' % v
-        m = re.match(r'adda=&%40([^&]{2,16})=New$',raw)
+            cb, name, montant = m.group(1), m.group(2), m.group(3)
+            v = eval(d[name])
+            mont = - int (montant) if cb else int(montant)
+            if v[0] + mont >= 0:
+                c = v[4]
+                v[0] += mont
+                ra = __cur_ratio__[c][1] if cb else __cur_ratio__[c][3]
+                v[5] -= mont * ra
+                vtax = eval (dtax[c])
+                delta = __cur_ratio__[c][1] - __cur_ratio__[c][2] if cb else __cur_ratio__[c][3] - __cur_ratio__[c][2]
+                vtax[1] += mont * delta
+                dtax[c] = '%s' % vtax
+            d[name] = '%s' % v
+        m = re.match(r'adda=&cur=\w{3}&(cb=on&|)%40([^&]{2,16})=New$',raw) # New IG
         if m:
-            s = m.group(1)
+            cb, s = m.group(1), m.group(2)
             v = eval(d[s])
             g = 'g1'
             now = '%s' % datetime.datetime.now()
@@ -144,9 +187,9 @@ def application(environ, start_response):
             p, f, c = random.randint(1,1000)/100, random.randint(1,500)*100, 'content'
             v[1][g] = [(p,p,0), [], (p, f, 'signature1', 'the date1', c)]
             d[s] = '%s' % v
-        m = re.match(r'adda=&buy=([^\+]+)\+([\w\-]{4})$',raw)
+        m = re.match(r'adda=&cur=\w{3}&(cb=on&|)buy=([^\+]+)\+([\w\-]{4})$',raw) # buy
         if m: 
-            b, g = m.group(1), m.group(2)  
+            cb, b, g = m.group(1), m.group(2), m.group(3)  
             s = hg[g]
             vb, vs = eval(d[b]), eval(d[s])
             if vb[0] >= vs[1][g][0][0]:
@@ -172,6 +215,16 @@ def application(environ, start_response):
                 vs[1][g][0] = (p, dt, (p-dt)/(i-1))
                 ###########
                 d[s] = '%s' % vs
+    o += '<form method="post"><table>\n'
+    o += '<tr><th width="100"><input name="adda" placeholder="Name" title="add new authors\'s name" size="10"/></th>'
+    o += '<th width="50"><select name="cur" title="select the official money before creating an agent">'
+    for m in __cur_ratio__:
+        o += '<option title="ratio %s/⊔:%s/%s/%s">%s</option>' % (__cur_ratio__[m][0], __cur_ratio__[m][1], __cur_ratio__[m][2], __cur_ratio__[m][3], m)
+    o += '</select></th>'
+    o += '<th width="120">'
+    disp = ' checked' if cb else ''
+    o += '<label title="\'+\': convert money to ⊔ ... \'-\': convert ⊔ to money" style="width: 40px;" class="toggle candy"><input name="cb" id="cb" type="checkbox"%s/><p>Balance<span>-</span><span>+</span></p><a class="slide-button"></a></label>' % (disp)
+    o += '</th><th>Created IGs</th><th>Bought IGs</th></tr>\n'
     i, s, n1, n2 = 0, 0, 0, 0
     for x in d.keys():
         i += 1
@@ -179,7 +232,8 @@ def application(environ, start_response):
         s += v[0]
         name = x.decode('utf-8')
         o += '<tr><td title="created %s">%s</td>' % (v[3], name)
-        o += '<td>%5.2f ⊔<br/><input name="%s" type="submit" title="provision 1⊔ to the account" value="+1"/><input name="%s" type="submit" title="provision 10⊔ to the account" value="+10"/><input name="%s" type="submit" title="provision 100⊔ to the account" value="+100"/></td><td onclick="f(event);"><input name="@%s" type="submit" value="New"/>' % (v[0], name, name, name,  name)  
+        o += '<td class="num" title="%s is registered with %s currency">%5.2f%s<br/>%s</td>' % (name, v[4], v[5], __cur_ratio__[v[4]][0], v[4])
+        o += '<td class="num">%5.2f ⊔<br/><input name="%s" type="submit" title="provision 1⊔ to/from the account" value="1"/><input name="%s" type="submit" title="provision 10⊔ to/from the account" value="10"/><input name="%s" type="submit" title="provision 100⊔ to/from the account" value="100"/></td><td onclick="f(event);"><input name="@%s" type="submit" value="New"/>' % (v[0], name, name, name,  name)  
         sv = sorted(v[1].keys())
         for g in sv:
             n1 += 1
@@ -193,11 +247,17 @@ def application(environ, start_response):
             se = hg[g].decode('utf-8')
             o += ' <a title="Author:%s">(%s)</a>' % (se, g)
         o += '<fh6>%d</fh6></td></tr>\n' % len(sv)
-    o += '<tr><td><i>Total %d<i></td><td>%5.2f ⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(i, s, n1, n2)
-    d.close()
+    o += '<tr><td><i>Total (%d)<i></td><td> </td><td>%5.2f⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(i, s, n1, n2)
     o += '</table><form>'
+    o += '<table width="50%"><tr><th width="50">Currency</th><th width="10"> </th><th>Buy Ratio</th><th>Nominal Ratio</th><th>Sale Ratio</th><th>Nb of citizens</th><th>Total Government Tax</th></tr>'
+    for c in __cur_ratio__:
+        vtax = eval (dtax[c])
+        o += '<tr><td>%s</td><td>%s</td><td class="num">%5.3f</td><td class="num">%5.3f</td><td class="num">%5.3f</td><td class="num">%05d</td><td class="num"><b>%7.2f %s</b></td><tr>' % (c, __cur_ratio__[c][0], __cur_ratio__[c][1], __cur_ratio__[c][2], __cur_ratio__[c][3], vtax[0], vtax[1], __cur_ratio__[c][0]) 
+    o += '</table>'
+    d.close()
+    dtax.close()
     #if raw: o += "<pre>%s</pre>" % raw
-    o += "<pre>%s</pre>" % query
+    #o += "<pre>%s</pre>" % query
     o += foot() + '</html>'
     start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))])
     return [o.encode('utf-8')] 
@@ -210,21 +270,23 @@ def head():
 def foot():
     return """\n<br/><table><tr><td><p1>Help</p1></td><td><p1>Aide</p1></td></td>
 <tr><td><p>To add an agent, type a name not already choosen, create two or three agents at least<br/>
-Then provision some ⊔ using the '+' buttons so the current agent can buy some IGs (Intangible Good)<br/>
+Set switch to '+', then then provision some ⊔ using the '1','10' or '100' buttons so the current agent can buy some IGs (Intangible Good)<br/>
 Create for an agent (artist) several IGs using the 'New' button,<br/> 
 prices are randomly setted and visible as tooltip.<br/>
 Select one created IG, then push one button of a selected buyer for that IG<br/>
 To simulate sponsorship, make the same agent buy several times the same good<br/>
+Any artist can convert its ⊔ to local money by switching to '-' position.<br/>
 Check that the total ⊔ sum does not change when buying an IG<br/>
 You can check both the increasing author's income and the refunding of previous buyers<br/>
 Note that for an artist buying its own IGs does not change her balance, but only decrease the current price.</p></td>
 <td><p>Pour ajouter un agent, tapez un nom qui n'est pas déjà été choisi, créer deux ou trois agents au moins<br/>
-Provisionner alors des  ⊔ en utilisant les boutons '+' afin que l'agent courant puisse acheter des IGs (Bien Immatériel)<br/>
+Positionnez l'interrupteur sur '+', puis provisionner alors des ⊔ en utilisant les boutons '1', '10' ou '100' afin que l'agent courant puisse acheter des IGs (Bien Immatériel)<br/>
 Créer pour un agent (artiste) plusieurs IGs en utilisant le bouton 'New',<br/> 
 Les prix sont fixés aléatoirement et visible dans les bulles.<br/>
-Sélectionez un IG créé et pressez alors un bouton d'un acheteur potentiel de cet IG<br/>
+Sélectionnez un IG créé et pressez alors un bouton d'un acheteur potentiel de cet IG<br/>
 Pour simuler un mécénat, faites acheter par le même agent plusieurs fois le même bien<br/>
-Vérifier que la somme totale en ⊔ n'a pas changé lors de l'achât d'un IG<br/>
+Tout artiste peut convertir ses ⊔ en argent local en positionnant l'interrupteur sur '-'.<br/>
+Vérifier que la somme totale en ⊔ n'a pas changé lors de l'achat d'un IG<br/>
 Vous pouvez vérifier que le revenu de l'auteur est croissant et aussi le remboursement des précédents acheteurs<br/>
 Remarquez que pour un artiste achetant ses propres créations, son solde ne change pas, seulement le prix courant décroit.</p></td>
 </tr></table>
