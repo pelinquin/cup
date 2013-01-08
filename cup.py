@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # Welcome to ⊔net!
 #-----------------------------------------------------------------------------
-#  © Copyright 2012 ⊔Foundation
+#  © Copyright 2013 ⊔Foundation
 #    This file is part of ⊔net.
 #
 #    ⊔net is free software: you can redistribute it and/or modify
@@ -129,11 +129,12 @@ def application(environ, start_response):
     if query == 'source':
         start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
         return [open(__file__, 'r', encoding='utf-8').read().encode('utf-8')] 
+    if query == 'log':
+        start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
+        return [open(__file__, 'r', encoding='utf-8').read().encode('utf-8')] 
     if query == 'benhamou':
         start_response('200 OK', [('Content-type', 'application/pdf'), ('Content-Disposition', 'filename={}'.format('EDLC.pdf'))])
-        if os.path.isfile('/home/pi/Economie_de_la_culture.pdf'):
-            shutil.move('/home/pi/Economie_de_la_culture.pdf', '/u/Economie_de_la_culture.pdf')
-        return [open('/u/Economie_de_la_culture.pdf', 'rb').read()] 
+        return [open('/home/pi/Economie_de_la_culture.pdf', 'rb').read()] 
     if query == 'reset':
         subprocess.Popen(('rm','/u/net.db','/u/tax.db'),).communicate()
         start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
@@ -341,3 +342,4 @@ if __name__ == '__main__':
     for b in ('agent2', 'agent3', 'agent1', 'agent2', 'agent4'): u.buy(b, 'agent1', 'g1_agent1')
     u.display()
 
+# End ⊔net!
