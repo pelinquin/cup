@@ -120,9 +120,15 @@ def app_update(host):
     o += '</pre><br/><a href="cup">Reload the new version</a></html>'
     return o.encode('utf-8')
 
+def log(s, ip=''):
+    "Append log"
+    now = '%s' % datetime.datetime.now()
+    open('/u/log', 'a', encoding='utf-8').write('%s|%s|%s\n' % (now[:-7], ip, s))
+
 def application(environ, start_response):
     """ WSGI Web application """
     query, mime, o, fname = urllib.parse.unquote(environ['QUERY_STRING']), 'text/html; charset=utf-8', 'Error!', 'toto'
+    log(query, environ['REMOTE_ADDR'])
     if query == 'update':
         start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))])
         return [app_update(environ['SERVER_NAME']) ]
@@ -131,7 +137,7 @@ def application(environ, start_response):
         return [open(__file__, 'r', encoding='utf-8').read().encode('utf-8')] 
     if query == 'log':
         start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
-        return [open(__file__, 'r', encoding='utf-8').read().encode('utf-8')] 
+        return [open('/u/log', 'r', encoding='utf-8').read().encode('utf-8')] 
     if query == 'benhamou':
         start_response('200 OK', [('Content-type', 'application/pdf'), ('Content-Disposition', 'filename={}'.format('EDLC.pdf'))])
         return [open('/home/pi/Economie_de_la_culture.pdf', 'rb').read()] 
