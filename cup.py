@@ -19,7 +19,7 @@
 #    along with ⊔net.  If not, see <http://www.gnu.org/licenses/>.
 #-----------------------------------------------------------------------------
 
-import sys, re, os, math, random, urllib.parse, dbm, datetime, base64, hashlib, subprocess
+import sys, re, os, math, random, urllib.parse, dbm, datetime, base64, hashlib, subprocess, shutil
 
 # constants defined by government banking authorities and should be very stable
 __cur_ratio__ = {'EUR':['€',0.731,0.820,0.923], 
@@ -113,7 +113,7 @@ def hashf(s):
 def app_update(host):
     here = os.path.dirname(os.path.abspath(__file__))
     # add security
-    cmd = 'cd %s; ls' % here  host == 'cup' else 'cd %s/..; rm -rf cup; git clone https://github.com/pelinquin/cup.git' % here 
+    cmd = 'cd %s; ls' % here  if host == 'cup' else 'cd %s/..; rm -rf cup; git clone https://github.com/pelinquin/cup.git' % here 
     out, err = subprocess.Popen((cmd), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
     o = '<html><pre>Application Update...\n'
     o += 'Error:%s\n' % err if err else 'Message:%s\nUpdate OK\n' % out.decode('utf-8')
@@ -130,8 +130,10 @@ def application(environ, start_response):
         start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
         return [open(__file__, 'r', encoding='utf-8').read().encode('utf-8')] 
     if query == 'benhamou':
-        start_response('200 OK', [('Content-type', 'application/pdf')])
-        return [open('../Economie_de_la_culture', 'rb').read()] 
+        start_response('200 OK', [('Content-type', 'application/pdf'), ('Content-Disposition', 'filename={}'.format('EDLC.pdf'))])
+        if os.path.isfile('/home/pi/Economie_de_la_culture.pdf'):
+            shutil.move('/home/pi/Economie_de_la_culture.pdf', '/u/Economie_de_la_culture.pdf')
+        return [open('/u/Economie_de_la_culture.pdf', 'rb').read()] 
     if query == 'reset':
         subprocess.Popen(('rm','/u/net.db','/u/tax.db'),).communicate()
         start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
