@@ -113,10 +113,7 @@ def hashf(s):
 def app_update(host):
     here = os.path.dirname(os.path.abspath(__file__))
     # add security
-    if host == 'pelinquin':
-        cmd = 'cd %s; ls' % here
-    else:
-        cmd = 'cd %s/..; rm -rf cup; git clone https://github.com/pelinquin/cup.git' % here # Usualy git://github...
+    cmd = 'cd %s; ls' % here  host == 'cup' else 'cd %s/..; rm -rf cup; git clone https://github.com/pelinquin/cup.git' % here 
     out, err = subprocess.Popen((cmd), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
     o = '<html><pre>Application Update...\n'
     o += 'Error:%s\n' % err if err else 'Message:%s\nUpdate OK\n' % out.decode('utf-8')
@@ -132,6 +129,9 @@ def application(environ, start_response):
     if query == 'source':
         start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
         return [open(__file__, 'r', encoding='utf-8').read().encode('utf-8')] 
+    if query == 'benhamou':
+        start_response('200 OK', [('Content-type', 'application/pdf')])
+        return [open('../Economie_de_la_culture', 'rb').read()] 
     if query == 'reset':
         subprocess.Popen(('rm','/u/net.db','/u/tax.db'),).communicate()
         start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
