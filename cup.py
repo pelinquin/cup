@@ -46,7 +46,7 @@ td.num {text-align:right;}
 fh6 {display:block;font-size:10; text-align:right;color:#AAA;}
 l {text-align:left;}
 p{padding-left:30;}
-div{position:absolute; top:10;right:90;}
+div{position:absolute; top:10;right:20;}
 p1 { font-family: 'Schoolbell','Arizonia', Helvetica, sans-serif; color: #2b2b2b; font-size:32;}
 img {vertical-align:top;}
 table {border: 1px solid #666;width:100%;border-collapse:collapse;} 
@@ -278,7 +278,7 @@ def application(environ, start_response):
 def head():
     return """\n<title>The ⊔Foundation</title>
 <h1 title="the 'cup' Foundation"><a href="http://www.cupfoundation.net/">⊔<n1>Simulation</n1></a></h1>
-<div class="logo"><svg xmlns="http://www.w3.org/2000/svg"><path stroke-width="0" fill="Dodgerblue" stroke="none" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></svg></div>\n"""
+<div class="logo"><svg xmlns="http://www.w3.org/2000/svg" width="70"><path stroke-width="0" fill="Dodgerblue" stroke="none" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></svg></div>\n"""
 
 def foot():
     return """\n<br/><table><tr><td><p1>Help</p1></td><td><p1>Aide</p1></td></td>
@@ -347,5 +347,14 @@ if __name__ == '__main__':
         for g in ('g1', 'g2', 'g3'): u.sell (a, '%s_%s' % (g,a), 1, 1000, 'content %s %s' % (g, a))
     for b in ('agent2', 'agent3', 'agent1', 'agent2', 'agent4'): u.buy(b, 'agent1', 'g1_agent1')
     u.display()
+    d = dbm.open('/u/net')
+    for x in d.keys():
+        print (x, d[x])
+    d.close()
+    d = dbm.open('/u/tax')
+    for x in d.keys():
+        print (x, d[x])
+    d.close()
+    
 
 # End ⊔net!
