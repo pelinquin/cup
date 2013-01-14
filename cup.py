@@ -247,9 +247,8 @@ def application(environ, start_response):
                     va = eval(d[a])
                     va[0] += vig[0][2]                                              # 1/ refund the other buyers
                     d[a] = '%s' % va
-                vb[2][g] = vb[2].get(g,0) + 1                                       # 2/ add nb of bought ig to buyer 
                 vb = eval(d[b])
-                vb[2][g] = s
+                vb[2][g] = vb[2].get(g,0) + 1                                       # 2/ add nb of bought ig to buyer 
                 vb[0] -= vig[0][0]                                                  # 3/ buyer pay the price
                 d[b] = '%s' % vb
                 for s in vig[2]: 
@@ -287,7 +286,7 @@ def application(environ, start_response):
                 vs[1][g][0] = (p, dt, (p-dt)/(i-1))
     o += '<form method="post" onsubmit="submited();"><table>\n'
     disp = ' checked' if fr else ''
-    #o += '<div class="lang"><label class="toggle candy" lenght="20"><input name="fr" id="fr" type="checkbox"%s/><p><span>en</span><span>fr</span></p><a class="slide-button"></a></label></div>' % disp
+    o += '<div class="lang"><label class="toggle candy" lenght="20"><input name="fr" id="fr" type="checkbox"%s/><p><span>fr</span><span>en</span></p><a class="slide-button"></a></label></div>' % disp
     o += '<tr><th width="100"><input name="adda" placeholder="Name" title="add new authors\'s name" size="10"/></th>'
     o += '<th width="50"><select name="cur" title="select the official money before creating an agent">'
     for m in __cur_ratio__:
@@ -310,15 +309,16 @@ def application(environ, start_response):
         for g in sv:
             n1 += 1
             vig = eval(dig[g])
-            per, pc, pf = v[1][g], vig[0][0], vig[3][1]
-            o += ' <a id="%s" title="%5.2f⊔%2.0f (%5.2f %%)">(%s)</a>' % (g, pc, pf, per, g)
+            per, pc, pf, np = v[1][g], vig[0][0], vig[3][1], vig[2][name]
+            o += ' <a id="%s" title="%5.2f⊔%2.0f (%5.2f %%) %s parts">(%s)</a>' % (g, pc, pf, per, np, g)
         o += '<fh6>%d</fh6></td>' % len(sv)
         o += '<td><button name="buy" type="submit" value="%s" disabled="yes"/>Buy</button><br/>' % name
         sv = sorted(v[2].keys())
         for g in sv:
             n2 += 1
             se = hg[g].decode('utf-8')
-            o += ' <a title="Author:%s">(%s)</a>' % (se, g)
+            vig = eval(dig[g])
+            o += ' <a title="Author:%s #%s">(%s)</a>' % (se, v[2][g], g)
         o += '<fh6>%d</fh6></td></tr>\n' % len(sv)
     o += '<tr><td><i>Total (%d)<i></td><td> </td><td class="num">%5.2f ⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(i, s, n1, n2)
     o += '</table><form>'
@@ -332,7 +332,7 @@ def application(environ, start_response):
     dtax.close()
     #if raw: o += "<pre>%s</pre>" % raw
     #o += "<pre>%s</pre>" % query
-    o += foot() + '</html>'
+    o += foot(fr) + '</html>'
     start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))])
     return [o.encode('utf-8')] 
 
@@ -341,19 +341,9 @@ def head():
 <h1 title="the 'cup' Foundation"><a href="http://www.cupfoundation.net/">⊔<n1>Simulation</n1></a></h1>
 <div class="logo"><svg xmlns="http://www.w3.org/2000/svg" width="70"><path stroke-width="0" fill="Dodgerblue" stroke="none" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></svg></div>\n"""
 
-def foot():
-    return """\n<br/><table><tr><td><p1>Help</p1></td><td><p1>Aide</p1></td></td>
-<tr><td><p>To add an agent, type a name not already choosen, create two or three agents at least<br/>
-Set switch to '+', then then provision some ⊔ using the '1','10' or '100' buttons so the current agent can buy some IGs (Intangible Good)<br/>
-Create for an agent (artist) several IGs using the 'New' button,<br/> 
-prices are randomly setted and visible as tooltip.<br/>
-Select one created IG, then push one button of a selected buyer for that IG<br/>
-To simulate sponsorship, make the same agent buy several times the same good<br/>
-Any artist can convert its ⊔ to local money by switching to '-' position.<br/>
-Check that the total ⊔ sum does not change when buying an IG<br/>
-You can check both the increasing author's income and the refunding of previous buyers<br/>
-Note that for an artist buying its own IGs does not change her balance, but only decrease the current price.</p></td>
-<td><p>Pour ajouter un agent, tapez un nom qui n'est pas déjà été choisi, créer deux ou trois agents au moins<br/>
+def foot(fr):
+    if fr:
+        o = """\n<p><p1>Aide :</p1> Pour ajouter un agent, tapez un nom qui n'est pas déjà été choisi, créer deux ou trois agents au moins<br/>
 Positionnez l'interrupteur sur '+', puis provisionner alors des ⊔ en utilisant les boutons '1', '10' ou '100' afin que l'agent courant puisse acheter des IGs (Bien Immatériel)<br/>
 Créer pour un agent (artiste) plusieurs IGs en utilisant le bouton 'New',<br/> 
 Les prix sont fixés aléatoirement et visible dans les bulles.<br/>
@@ -362,12 +352,23 @@ Pour simuler un mécénat, faites acheter par le même agent plusieurs fois le m
 Tout artiste peut convertir ses ⊔ en argent local en positionnant l'interrupteur sur '-'.<br/>
 Vérifier que la somme totale en ⊔ n'a pas changé lors de l'achat d'un IG<br/>
 Vous pouvez vérifier que le revenu de l'auteur est croissant et aussi le remboursement des précédents acheteurs<br/>
-Remarquez que pour un artiste achetant ses propres créations, son solde ne change pas, seulement le prix courant décroit.</p></td>
-</tr></table>
-<p>! This simulation is hosted on a tiny <a href="http://pi.pelinquin.fr/u?pi">RaspberryPi</a> with a low bandwidth personnal box. see <a href="cup?source">Source code</a>.
+Remarquez que pour un artiste achetant ses propres créations, son solde ne change pas, seulement le prix courant décroit.</p>"""
+    else:
+        o = """\n<p><p1>Help:</p1> To add an agent, type a name not already choosen, create two or three agents at least<br/>
+Set switch to '+', then then provision some ⊔ using the '1','10' or '100' buttons so the current agent can buy some IGs (Intangible Good)<br/>
+Create for an agent (artist) several IGs using the 'New' button,<br/> 
+prices are randomly setted and visible as tooltip.<br/>
+Select one created IG, then push one button of a selected buyer for that IG<br/>
+To simulate sponsorship, make the same agent buy several times the same good<br/>
+Any artist can convert its ⊔ to local money by switching to '-' position.<br/>
+Check that the total ⊔ sum does not change when buying an IG<br/>
+You can check both the increasing author's income and the refunding of previous buyers<br/>
+Note that for an artist buying its own IGs does not change her balance, but only decrease the current price.</p>"""
+    o += """\n<p>! This simulation is hosted on a tiny <a href="http://pi.pelinquin.fr/u?pi">RaspberryPi</a> with a low bandwidth personnal box. see <a href="cup?source">Source code</a>.
 <h6>Digest: %s<br/>
 Contact: <mail>laurent.fournier@cupfoundation.net</mail><br/>
 ⊔FOUNDATION is currently registered in Toulouse/France  SIREN: 399 661 602 00025<br/></h6>\n""" % __digest__.decode('utf-8')
+    return o
 
 class cup_old:
     xi = .25
