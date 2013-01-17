@@ -19,7 +19,7 @@
 #    along with ⊔net.  If not, see <http://www.gnu.org/licenses/>.
 #-----------------------------------------------------------------------------
 
-import sys, re, os, math, random, urllib.parse, dbm, datetime, base64, hashlib, subprocess, shutil
+import sys, re, os, math, random, urllib.parse, dbm, datetime, base64, hashlib, subprocess, shutil, smtplib
 __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf-8').read().encode('utf-8')).digest())[:5]
 
 # constants defined by government banking authorities and should be very stable
@@ -51,9 +51,13 @@ div{position:absolute; top:10;right:20;}
 div.lang{position:absolute; top:20;right:110;width:140;}
 p1 { font-family: 'Schoolbell','Arizonia', Helvetica, sans-serif; color: #2b2b2b; font-size:32;}
 img {vertical-align:top;}
-table {border: 1px solid #666;width:100%;border-collapse:collapse;} 
+table.main {border: 1px solid #666;width:100%;border-collapse:collapse;} 
 td,th {border: 1px solid #666;padding:2pt;}
 td.in:active {background-color:red;}
+table.ig {margin:0px; color:white;background-color:Dodgerblue; display:inline-table;} 
+td.small {font-size:7px;border:none;text-align:center; }
+p2.small {font-size:7px; }
+td.ig {font-family:monospace;font-size:16px;border:none;text-align:center; heigth:10px;}
 
 .toggle p span { display: none;}
 .toggle { position: relative; padding: 0;margin-left: 80px;}
@@ -101,12 +105,12 @@ if (sel == undefined) {
   for (var i=0; i<t1.length; i++) { 
     t1[i].removeAttribute('disabled'); 
     var v=t1[i].getAttribute('value').replace(/ \S*$/,'');
-    t1[i].firstChild.nodeValue='\\'' + v + '\\' buy\\n(' + sel + ')'; t1[i].setAttribute('value', v + ' ' + sel);
+    t1[i].firstChild.nodeValue='\\'' + v + '\\' buy\\n[' + sel + ']'; t1[i].setAttribute('value', v + ' ' + sel);
   }
   for (var i=0; i<t2.length; i++) { 
     t2[i].removeAttribute('disabled'); 
     var v=t2[i].getAttribute('value').replace(/ \S*$/,'');
-    t2[i].firstChild.nodeValue='\\'' + v + '\\' shares\\n(' + sel + ')'; t2[i].setAttribute('value', v + ' ' + sel);
+    t2[i].firstChild.nodeValue='\\'' + v + '\\' shares\\n[' + sel + ']'; t2[i].setAttribute('value', v + ' ' + sel);
   }
 } else {
   for (var i=0;i<t1.length; i++) {t1[i].firstChild.nodeValue='Buy';t1[i].setAttribute('disabled','yes');}
@@ -161,14 +165,10 @@ def application(environ, start_response):
     o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
     o += '<link href="http://fonts.googleapis.com/css?family=Schoolbell" rel="stylesheet" type="text/css">\n' 
     o += style() + script() + head()
-    hg, agents = {}, {}
+    agents = {}
     if os.path.isfile('/u/net.db'):
         d = dbm.open('/u/net')
-        for x in d.keys():
-            agents[x] = True;
-            v = eval(d[x])
-            for g in v[1]:
-                hg[g] = x
+        for x in d.keys(): agents[x] = True;
         d.close()
     if not os.path.isfile('/u/tax.db'):
         dtax = dbm.open('/u/tax', 'c')
@@ -178,16 +178,16 @@ def application(environ, start_response):
     raw, cb, fr = None, None, None
     if environ['REQUEST_METHOD'].lower() == 'post':
         raw = environ['wsgi.input'].read().decode('utf-8')
-        m = re.match(r'(fr=on&|)adda=([^&]{2,16})&cur=(\w{3})(&cb=on|)', raw) # Name
+        m = re.match(r'(fr=on&|)adda=([^&]{2,16})&age=(\d\d)&cur=(\w{3})(&cb=on|)', raw) # Name + Age + Currency
         if m:
-            fr, a, cur, cb = m.group(1), m.group(2), m.group(3), m.group(4)
+            fr, a, age, cur, cb = m.group(1), m.group(2), int(m.group(3)), m.group(4), m.group(4)
             if bytes(a, 'utf-8') not in agents:
                 now = '%s' % datetime.datetime.now()
-                d[a] = '%s' % [0, {}, {}, now[:-7], cur, 0]
+                d[a] = '%s' % [0, {}, {}, now[:-7], cur, 0, age]
                 vtax = eval (dtax[cur])
                 vtax[0] += 1
                 dtax[cur] = '%s' % vtax
-        m = re.match(r'(fr=on&|)adda=&cur=\w{3}&(cb=on&|)([^&]{2,16})=(10{0,2})$',raw) # +/-1,10,100
+        m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)([^&]{2,16})=(10{0,2})$',raw) # +/-1,10,100
         if m:
             fr, cb, name, montant = m.group(1), m.group(2), m.group(3), m.group(4)
             v = eval(d[name])
@@ -202,7 +202,7 @@ def application(environ, start_response):
                 vtax[1] += mont * delta
                 dtax[c] = '%s' % vtax
             d[name] = '%s' % v
-        m = re.match(r'(fr=on&|)adda=&cur=\w{3}&(cb=on&|)%40([^&]{2,16})=New$',raw) # New IG (sell)
+        m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)%40([^&]{2,16})=New$',raw) # New IG (sell)
         if m:
             fr, cb, s = m.group(1), m.group(2), m.group(3)
             now = '%s' % datetime.datetime.now()
@@ -212,7 +212,7 @@ def application(environ, start_response):
             v[1][g] = 100
             d[s] = '%s' % v 
             dig[g] = '%s' % [(p,p,0), [], {s:10}, (p, f, 'signature1', 'the date1', c)] # 10 parts for initial author
-        m = re.match(r'(fr=on&|)adda=&cur=\w{3}&(cb=on&|)share=([^\+]+)\+([\w\-]{4})$',raw) # share
+        m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)share=([^\+]+)\+([\w\-]{4})$',raw) # share
         if m:
             fr, cb, s, g = m.group(1), m.group(2), m.group(3), m.group(4)  
             v = eval(dig[g])
@@ -226,23 +226,12 @@ def application(environ, start_response):
         #'Agent1' [23.43, {'ig1': 0.01},      {'ig2': 2},            '2013-01-11 16:21:19', 'JPY',   -2658.96]
         # Name    Ballance  {author hash: %}, {custom hash: nb},     date,                 currency, local balance] 
         #'ig1'    [(6.57, 6.57, 0),        ['agent2',],   {'Agent1': 10, 'Agent2': 1}, (6.57, 11700, 'signature1', 'the date1', 'content')]
-        # IG id   [(price, delta, refund), [custom list], {co-author parts},             (p1,   pf,     signature,    date,       content
-        m = re.match(r'(fr=on&|)adda=&cur=\w{3}&(cb=on&|)buy=([^\+]+)\+([\w\-]{4})$',raw) # buy
+        # IG id   [(price, delta, refund), [custom list], {co-author: parts},             (p1,   pf,     signature,    date,       content
+        m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)buy=([^\+]+)\+([\w\-]{4})$',raw) # buy
         if m: 
             fr, cb, b, g = m.group(1), m.group(2), m.group(3), m.group(4)  
-            s = hg[g]
-            vb, vs, vig = eval(d[b]), eval(d[s]), eval(dig[g])
+            vb, vig = eval(d[b]), eval(dig[g])
             if vb[0] >= vig[0][0]:
-                #for a in self.ig[g][1]: self.net[a][0] += self.ig[g][0][2]                       # 1/ refund all other buyers
-                #self.net[b][2][g] = self.net[b][2].get(g,0) + 1                                  # 2/ add nb of bought to buyer
-                #self.net[b][0] -= self.ig[g][0][0]                                               # 3/ buyer pay the price
-                #for s in self.ig[g][2]: self.net[s][0] += self.ig[g][0][1]*self.net[s][1][g]/100 # 4/ income for all authors 
-                #self.ig[g][1].append(b)                                                          # 5/ add buyer to ig hash
-                #i, p1, pf = len(self.ig[g][1]) + 1, self.ig[g][3][0], self.ig[g][3][1]           # 6/ get nb, p1, pf
-                #k = math.log(pf-p1) - math.log(pf-2*p1)
-                #p = (pf - (pf-p1)*math.exp(-self.xi*(i-1)*k))/i                                  # new price 
-                #d = (pf-p1)*(math.exp(-self.xi*(i-2)*k) - math.exp(-self.xi*(i-1)*k))            # new delta
-                #self.ig[g][0] = (p, d, (p-d)/(i-1))                                              # 7/ updates prices
                 for a in vig[1]: 
                     va = eval(d[a])
                     va[0] += vig[0][2]                                              # 1/ refund the other buyers
@@ -261,41 +250,27 @@ def application(environ, start_response):
                 p = (pf - (pf-p1)*math.exp(-xi*(i-1)*k))/i                          # new price
                 dt = (pf-p1)*(math.exp(-xi*(i-2)*k) - math.exp(-xi*(i-1)*k))        # new delta
                 vig[0] = (p, dt, (p-dt)/(i-1))                                      # 7/ update prices            
-                d[s], dig[g] = '%s' % vs, '%s' % vig
-        if False:
-            s = hg[g]
-            vb, vs = eval(d[b]), eval(d[s])
-            if vb[0] >= vs[1][g][0][0]:
-                for a in vs[1][g][1]:
-                    va = eval(d[a])
-                    va[0] += vs[1][g][0][2] # refund
-                    d[a] = '%s' % va
-                vb = eval(d[b])
-                vb[2][g] = s
-                vb[0] -= vs[1][g][0][0] # buyer price
-                d[b] = '%s' % vb
-                vs = eval(d[s])
-                vs[0] += vs[1][g][0][1] # seller income
-                vs[1][g][1].append(b) # add buyer
-                i = len(vs[1][g][1]) + 1
-                p1 = vs[1][g][2][0]
-                pf = vs[1][g][2][1]
-                k, xi = math.log(pf-p1) - math.log(pf-2*p1), .25
-                p = (pf - (pf-p1)*math.exp(-xi*(i-1)*k))/i
-                dt = (pf-p1)*(math.exp(-xi*(i-2)*k) - math.exp(-xi*(i-1)*k))
-                vs[1][g][0] = (p, dt, (p-dt)/(i-1))
-    o += '<form method="post" onsubmit="submited();"><table>\n'
+                dig[g] = '%s' % vig
+    o += '<form method="post" onsubmit="submited();">\n'
+    lang = 'en'
+    if 'HTTP_COOKIE' in environ:
+        m = re.match(r'lang=([^;]+)', environ['HTTP_COOKIE'])
+        if m: lang = m.group(1)
     disp = ' checked' if fr else ''
     o += '<div class="lang"><label class="toggle candy" lenght="20"><input name="fr" id="fr" type="checkbox"%s/><p><span>fr</span><span>en</span></p><a class="slide-button"></a></label></div>' % disp
+    o += '<table class="main">\n'
     o += '<tr><th width="100"><input name="adda" placeholder="Name" title="add new authors\'s name" size="10"/></th>'
+    o += '<th width="20"><input name="age" placeholder="Age" title="Age" size="2"/></th>'
     o += '<th width="50"><select name="cur" title="select the official money before creating an agent">'
+    o += '<option value="">Cur.</option>' 
     for m in __cur_ratio__:
-        o += '<option title="ratio %s/⊔:%s/%s/%s">%s</option>' % (__cur_ratio__[m][0], __cur_ratio__[m][1], __cur_ratio__[m][2], __cur_ratio__[m][3], m)
+        o += '<option title="ratio %s/⊔:%s/%s/%s" value="%s">%s</option>' % (__cur_ratio__[m][0], __cur_ratio__[m][1], __cur_ratio__[m][2], __cur_ratio__[m][3], m, __cur_ratio__[m][0])
     o += '</select></th>'
     o += '<th width="120">'
     disp = ' checked' if cb else ''
     o += '<label title="\'+\': convert money to ⊔ ... \'-\': convert ⊔ to money" style="width: 40px;" class="toggle candy"><input name="cb" id="cb" type="checkbox"%s/><p>Balance<span>-</span><span>+</span></p><a class="slide-button"></a></label>' % disp
-    o += '</th><th>Created IGs</th><th>Bought IGs</th></tr>\n'
+    o += '</th><th rowspan="2">Created Intangible Goods</th><th rowspan="2">Bought Intangible Goods</th></tr>\n'
+    o += '<tr><td colspan="4" class="num"><input type="submit"/></td></tr>\n'
     i, s, n1, n2 = 0, 0, 0, 0
     for x in d.keys():
         i += 1
@@ -303,6 +278,7 @@ def application(environ, start_response):
         s += v[0]
         name = x.decode('utf-8')
         o += '<tr><td title="created %s">%s</td>' % (v[3], name)
+        o += '<td title="years old">%d</td>' % v[6]
         o += '<td class="num" title="%s is registered with %s currency">%5.2f%s<br/>%s</td>' % (name, v[4], v[5], __cur_ratio__[v[4]][0], v[4])
         o += '<td class="num">%5.2f ⊔<br/><input name="%s" type="submit" title="provision 1⊔ to/from the account" value="1"/><input name="%s" type="submit" title="provision 10⊔ to/from the account" value="10"/><input name="%s" type="submit" title="provision 100⊔ to/from the account" value="100"/></td><td onclick="f(event);"><input name="@%s" type="submit" value="New"/><button name="share" type="submit" value="%s" disabled="yes">Share</button><br/>' % (v[0], name, name, name,  name, name)  
         sv = sorted(v[1].keys())
@@ -310,19 +286,21 @@ def application(environ, start_response):
             n1 += 1
             vig = eval(dig[g])
             per, pc, pf, np = v[1][g], vig[0][0], vig[3][1], vig[2][name]
-            o += ' <a id="%s" title="%5.2f⊔%2.0f (%5.2f %%) %s parts">(%s)</a>' % (g, pc, pf, per, np, g)
+            o += ' <a><table class="ig" title="%5.2f %% (%s parts)"><tr><td id="%s" class="ig">%s</td></tr><tr><td class="small">%5.2f⊔%2.0f</td></tr></table></a>' % (per, np, g, g, pc, pf) 
         o += '<fh6>%d</fh6></td>' % len(sv)
         o += '<td><button name="buy" type="submit" value="%s" disabled="yes"/>Buy</button><br/>' % name
         sv = sorted(v[2].keys())
         for g in sv:
             n2 += 1
-            se = hg[g].decode('utf-8')
             vig = eval(dig[g])
-            o += ' <a title="Author:%s #%s">(%s)</a>' % (se, v[2][g], g)
+            lis = ''
+            for a in vig[2]:
+                lis += '%s:%s ' % (a, vig[2][a])
+            o += ' <a><table class="ig" title=""><tr><td class="ig">%s<p2 class="small">(%d)</p2></td></tr><tr><td class="small">%s</td></tr></table></a>' % (g, v[2][g], lis) 
         o += '<fh6>%d</fh6></td></tr>\n' % len(sv)
-    o += '<tr><td><i>Total (%d)<i></td><td> </td><td class="num">%5.2f ⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(i, s, n1, n2)
+    o += '<tr><td><i>Total (%d)<i></td><td> </td><td> </td><td class="num">%5.2f ⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(i, s, n1, n2)
     o += '</table><form>'
-    o += '<table width="50%"><tr><th width="50">Currency</th><th width="10"> </th><th>Buy Ratio</th><th>Nominal Ratio</th><th>Sale Ratio</th><th>Nb of citizens</th><th>Total Government Tax</th></tr>'
+    o += '<table class="main" width="50%"><tr><th width="50">Currency</th><th width="10"> </th><th>Buy Ratio</th><th>Nominal Ratio</th><th>Sale Ratio</th><th>Nb of citizens</th><th>Total Government Tax</th></tr>'
     for c in __cur_ratio__:
         vtax = eval (dtax[c])
         o += '<tr><td>%s</td><td>%s</td><td class="num">%5.3f</td><td class="num">%5.3f</td><td class="num">%5.3f</td><td class="num">%05d</td><td class="num"><b>%7.2f %s</b></td><tr>' % (c, __cur_ratio__[c][0], __cur_ratio__[c][1], __cur_ratio__[c][2], __cur_ratio__[c][3], vtax[0], vtax[1], __cur_ratio__[c][0]) 
@@ -333,7 +311,7 @@ def application(environ, start_response):
     #if raw: o += "<pre>%s</pre>" % raw
     #o += "<pre>%s</pre>" % query
     o += foot(fr) + '</html>'
-    start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))])
+    start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname)), ('set-cookie', 'lang=%s' % lang)])
     return [o.encode('utf-8')] 
 
 def head():
@@ -343,27 +321,10 @@ def head():
 
 def foot(fr):
     if fr:
-        o = """\n<p><p1>Aide :</p1> Pour ajouter un agent, tapez un nom qui n'est pas déjà été choisi, créer deux ou trois agents au moins<br/>
-Positionnez l'interrupteur sur '+', puis provisionner alors des ⊔ en utilisant les boutons '1', '10' ou '100' afin que l'agent courant puisse acheter des IGs (Bien Immatériel)<br/>
-Créer pour un agent (artiste) plusieurs IGs en utilisant le bouton 'New',<br/> 
-Les prix sont fixés aléatoirement et visible dans les bulles.<br/>
-Sélectionnez un IG créé et pressez alors un bouton d'un acheteur potentiel de cet IG<br/>
-Pour simuler un mécénat, faites acheter par le même agent plusieurs fois le même bien<br/>
-Tout artiste peut convertir ses ⊔ en argent local en positionnant l'interrupteur sur '-'.<br/>
-Vérifier que la somme totale en ⊔ n'a pas changé lors de l'achat d'un IG<br/>
-Vous pouvez vérifier que le revenu de l'auteur est croissant et aussi le remboursement des précédents acheteurs<br/>
-Remarquez que pour un artiste achetant ses propres créations, son solde ne change pas, seulement le prix courant décroit.</p>"""
+        o = """\n<p><p1>Aide :</p1> Pour ajouter un agent, choisir un nom inconnu, donnez un age et une monnaie courante. Créer au moins deux ou trois<br/>
+Positionnez l'interrupteur sur '+', puis provisionner alors des ⊔ en utilisant les boutons '1', '10' ou '100' afin que l'agent courant puisse acheter des IGs (Bien Immatériel). Créer pour un agent (artiste) plusieurs IGs en utilisant le bouton 'New'. Les prix sont fixés aléatoirement. Pour simuler le partage de la création d'un IG, sélectionner un IG et choisir un bouton "share" d'un agent pour lui ajouter une part (l'auteur initial a 10 parts). Pour simuler une vente, sélectionner un IG créé et pressez alors un bouton d'un acheteur potentiel de cet IG. Pour simuler un mécénat, acheter par le même agent plusieurs fois le même bien. Tout artiste peut convertir ses ⊔ en argent local en positionnant l'interrupteur sur '-'. Vérifier que la somme totale en ⊔ n'a pas changé lors de l'achat d'un IG. Vérifier aussi que le revenu de l'auteur est croissant et qu'il y a remboursement des précédents acheteurs. Remarquer que pour un artiste achetant ses propres créations, son solde ne change pas, seulement le prix courant décroit.</p>"""
     else:
-        o = """\n<p><p1>Help:</p1> To add an agent, type a name not already choosen, create two or three agents at least<br/>
-Set switch to '+', then then provision some ⊔ using the '1','10' or '100' buttons so the current agent can buy some IGs (Intangible Good)<br/>
-Create for an agent (artist) several IGs using the 'New' button,<br/> 
-prices are randomly setted and visible as tooltip.<br/>
-Select one created IG, then push one button of a selected buyer for that IG<br/>
-To simulate sponsorship, make the same agent buy several times the same good<br/>
-Any artist can convert its ⊔ to local money by switching to '-' position.<br/>
-Check that the total ⊔ sum does not change when buying an IG<br/>
-You can check both the increasing author's income and the refunding of previous buyers<br/>
-Note that for an artist buying its own IGs does not change her balance, but only decrease the current price.</p>"""
+        o = """\n<p><p1>Help:</p1> To add an agent, type a name not already choosen, create two or three agents at least. Set switch to '+', then then provision some ⊔ using the '1','10' or '100' buttons so the current agent can buy some IGs (Intangible Good). Create for an agent (artist) several IGs using the 'New' button, prices are randomly setted and visible as tooltip. Select one created IG, then push one button of a selected buyer for that IG. To simulate sponsorship, make the same agent buy several times the same good. Any artist can convert its ⊔ to local money by switching to '-' position. Check that the total ⊔ sum does not change when buying an IG. You can check both the increasing author's income and the refunding of previous buyers. Note that for an artist buying its own IGs does not change her balance, but only decrease the current price.</p>"""
     o += """\n<p>! This simulation is hosted on a tiny <a href="http://pi.pelinquin.fr/u?pi">RaspberryPi</a> with a low bandwidth personnal box. see <a href="cup?source">Source code</a>.
 <h6>Digest: %s<br/>
 Contact: <mail>laurent.fournier@cupfoundation.net</mail><br/>
@@ -465,8 +426,9 @@ if __name__ == '__main__':
     u.share('agent2', 'ig1', 10)
     u.buy('agent3', 'ig1')
     u.buy('agent3', 'ig1')
-    u.display1() 
-    
+    #u.display1()
+ 
+    print ('NET')
     d = dbm.open('/u/net')
     for x in d.keys():
         print (x, d[x])
@@ -476,11 +438,16 @@ if __name__ == '__main__':
     for x in d.keys():
         print (x, d[x])
     d.close()
-    
-    #d = dbm.open('/u/tax')
-    #for x in d.keys():
-    #    print (x, d[x])
-    #d.close()
-    
+    print ('TAX')
+    d = dbm.open('/u/tax')
+    for x in d.keys():
+        print (x, d[x])
+    d.close()
+    d = dbm.open('/u/net')
+    for x in d.keys():
+        v = eval(d[x])
+        for g in v[1]:
+            print (g, x)
+    d.close()
 
 # End ⊔net!
