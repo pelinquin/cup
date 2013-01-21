@@ -30,6 +30,21 @@ __cur_ratio__ = {'EUR':['€',0.731,0.820,0.923],
                  'CNY':['Ұ',6.405,6.634,6.703],
                  }
 
+loc = {
+    'bal': ['Balance',                  'Solde'],
+    'new': ['New Good',                 'Nouveau bien'],
+    'sha': ['Share',                    'Partager'],
+    'buy': ['Buy',                      'Acheter'],
+    'cIG': ['Created Intangible Goods', 'Biens immatériel créés'],
+    'bIG': ['Bought Intangible Goods',  'Biens immatériel achetés'],
+    'cur': ['Currency',                 'Monnaie'],
+    'bra': ['Buy Ratio',                'Taux d\'achat'],  	
+    'nra': ['Nominal Ratio',            'Taux nominal'],	
+    'sra': ['Sale Ratio',               'Taux de vente'],	
+    'nbc': ['Nb of citizens',           'Nombre de citoyens'],	
+    'tgt': ['Total Government Tax',     'Montant total des taxes'],
+    }
+
 def style():
     return """<style type="text/css"> 
 h1,h2,h3,h4,h5,h6,input,a,p,td,th,fh6{font-family:helvetica neue,helvetica,arial,sans-serif;}
@@ -85,7 +100,6 @@ td.ig {font-family:monospace;font-size:16px;border:none;text-align:center; heigt
 def script():
     return """<script type="text/ecmascript">\n/*<![CDATA[*//*---->*/\n
 var sel;
-
 
 function submited() {
   var hid = document.documentElement.scrollTop;
@@ -175,12 +189,16 @@ def application(environ, start_response):
         for x in __cur_ratio__: dtax[x] = '%s' % [0, 0.00]
         dtax.close()
     d, dig, dtax = dbm.open('/u/net', 'c'), dbm.open('/u/ig', 'c'), dbm.open('/u/tax', 'c')
-    raw, cb, fr = None, None, None
+    raw, cb, fr, newcook = None, None, None, []
     if environ['REQUEST_METHOD'].lower() == 'post':
         raw = environ['wsgi.input'].read().decode('utf-8')
+        fr1 = None 
+        m = re.match(r'(fr=on&|)', raw) # fr
+        if m:
+            fr1 = m.group(1)
         m = re.match(r'(fr=on&|)adda=([^&]{2,16})&age=(\d\d)&cur=(\w{3})(&cb=on|)', raw) # Name + Age + Currency
         if m:
-            fr, a, age, cur, cb = m.group(1), m.group(2), int(m.group(3)), m.group(4), m.group(4)
+            fr1, a, age, cur, cb = m.group(1), m.group(2), int(m.group(3)), m.group(4), m.group(4)
             if bytes(a, 'utf-8') not in agents:
                 now = '%s' % datetime.datetime.now()
                 d[a] = '%s' % [0, {}, {}, now[:-7], cur, 0, age]
@@ -189,7 +207,7 @@ def application(environ, start_response):
                 dtax[cur] = '%s' % vtax
         m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)([^&]{2,16})=(10{0,2})$',raw) # +/-1,10,100
         if m:
-            fr, cb, name, montant = m.group(1), m.group(2), m.group(3), m.group(4)
+            fr1, cb, name, montant = m.group(1), m.group(2), m.group(3), m.group(4)
             v = eval(d[name])
             mont = - int (montant) if cb else int(montant)
             if v[0] + mont >= 0:
@@ -202,9 +220,9 @@ def application(environ, start_response):
                 vtax[1] += mont * delta
                 dtax[c] = '%s' % vtax
             d[name] = '%s' % v
-        m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)%40([^&]{2,16})=New$',raw) # New IG (sell)
+        m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)%40([^&]{2,16})=(New|Nouveau)',raw) # New IG (sell)
         if m:
-            fr, cb, s = m.group(1), m.group(2), m.group(3)
+            fr1, cb, s = m.group(1), m.group(2), m.group(3)
             now = '%s' % datetime.datetime.now()
             g = hashf(now.encode('utf-8'))
             p, f, c = random.randint(1,1000)/100, random.randint(1,500)*100, 'content'
@@ -214,7 +232,7 @@ def application(environ, start_response):
             dig[g] = '%s' % [(p,p,0), [], {s:10}, (p, f, 'signature1', 'the date1', c)] # 10 parts for initial author
         m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)share=([^\+]+)\+([\w\-]{4})$',raw) # share
         if m:
-            fr, cb, s, g = m.group(1), m.group(2), m.group(3), m.group(4)  
+            fr1, cb, s, g = m.group(1), m.group(2), m.group(3), m.group(4)  
             v = eval(dig[g])
             v[2][s] = v[2].get(s,0) + 1
             sumi = sum(v[2][x] for x in v[2])
@@ -229,7 +247,7 @@ def application(environ, start_response):
         # IG id   [(price, delta, refund), [custom list], {co-author: parts},             (p1,   pf,     signature,    date,       content
         m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)buy=([^\+]+)\+([\w\-]{4})$',raw) # buy
         if m: 
-            fr, cb, b, g = m.group(1), m.group(2), m.group(3), m.group(4)  
+            fr1, cb, b, g = m.group(1), m.group(2), m.group(3), m.group(4)  
             vb, vig = eval(d[b]), eval(dig[g])
             if vb[0] >= vig[0][0]:
                 for a in vig[1]: 
@@ -251,13 +269,13 @@ def application(environ, start_response):
                 dt = (pf-p1)*(math.exp(-xi*(i-2)*k) - math.exp(-xi*(i-1)*k))        # new delta
                 vig[0] = (p, dt, (p-dt)/(i-1))                                      # 7/ update prices            
                 dig[g] = '%s' % vig
-    o += '<form method="post" onsubmit="submited();">\n'
-    lang = 'en'
-    if 'HTTP_COOKIE' in environ:
-        m = re.match(r'lang=([^;]+)', environ['HTTP_COOKIE'])
-        if m: lang = m.group(1)
-    disp = ' checked' if fr else ''
-    o += '<div class="lang"><label class="toggle candy" lenght="20"><input name="fr" id="fr" type="checkbox"%s/><p><span>fr</span><span>en</span></p><a class="slide-button"></a></label></div>' % disp
+        fr = 'on' if fr1 else None
+        newcook = [('set-cookie', 'fr=%s' % fr)]
+    else:
+        fr = 'on' if 'HTTP_COOKIE' in environ and re.search(r'fr=on', environ['HTTP_COOKIE']) else None
+    l = 1 if fr else 0
+    o += '<form method="post">\n'
+    o += '<div class="lang"><label class="toggle candy" lenght="20"><input name="fr" id="fr" type="checkbox"%s/><p><span>fr</span><span>en</span></p><a class="slide-button"></a></label></div>' % (' checked' if fr else '')
     o += '<table class="main">\n'
     o += '<tr><th width="100"><input name="adda" placeholder="Name" title="add new authors\'s name" size="10"/></th>'
     o += '<th width="20"><input name="age" placeholder="Age" title="Age" size="2"/></th>'
@@ -268,8 +286,8 @@ def application(environ, start_response):
     o += '</select></th>'
     o += '<th width="120">'
     disp = ' checked' if cb else ''
-    o += '<label title="\'+\': convert money to ⊔ ... \'-\': convert ⊔ to money" style="width: 40px;" class="toggle candy"><input name="cb" id="cb" type="checkbox"%s/><p>Balance<span>-</span><span>+</span></p><a class="slide-button"></a></label>' % disp
-    o += '</th><th rowspan="2">Created Intangible Goods</th><th rowspan="2">Bought Intangible Goods</th></tr>\n'
+    o += '<label title="\'+\': convert money to ⊔ ... \'-\': convert ⊔ to money" style="width: 40px;" class="toggle candy"><input name="cb" id="cb" type="checkbox"%s/><p>%s<span>-</span><span>+</span></p><a class="slide-button"></a></label>' % (disp, loc['bal'][l])
+    o += '</th><th rowspan="2">%s</th><th rowspan="2">%s</th></tr>\n' % (loc['cIG'][l], loc['bIG'][l])
     o += '<tr><td colspan="4" class="num"><input type="submit"/></td></tr>\n'
     i, s, n1, n2 = 0, 0, 0, 0
     for x in d.keys():
@@ -280,7 +298,7 @@ def application(environ, start_response):
         o += '<tr><td title="created %s">%s</td>' % (v[3], name)
         o += '<td title="years old">%d</td>' % v[6]
         o += '<td class="num" title="%s is registered with %s currency">%5.2f%s<br/>%s</td>' % (name, v[4], v[5], __cur_ratio__[v[4]][0], v[4])
-        o += '<td class="num">%5.2f ⊔<br/><input name="%s" type="submit" title="provision 1⊔ to/from the account" value="1"/><input name="%s" type="submit" title="provision 10⊔ to/from the account" value="10"/><input name="%s" type="submit" title="provision 100⊔ to/from the account" value="100"/></td><td onclick="f(event);"><input name="@%s" type="submit" value="New"/><button name="share" type="submit" value="%s" disabled="yes">Share</button><br/>' % (v[0], name, name, name,  name, name)  
+        o += '<td class="num">%5.2f ⊔<br/><input name="%s" type="submit" title="provision 1⊔ to/from the account" value="1"/><input name="%s" type="submit" title="provision 10⊔ to/from the account" value="10"/><input name="%s" type="submit" title="provision 100⊔ to/from the account" value="100"/></td><td onclick="f(event);"><input name="@%s" type="submit" value="%s"/><button name="share" type="submit" value="%s" disabled="yes">%s</button><br/>' % (v[0], name, name, name,  name, loc['new'][l], name, loc['sha'][l])  
         sv = sorted(v[1].keys())
         for g in sv:
             n1 += 1
@@ -288,7 +306,7 @@ def application(environ, start_response):
             per, pc, pf, np = v[1][g], vig[0][0], vig[3][1], vig[2][name]
             o += ' <a><table class="ig" title="%5.2f %% (%s parts)"><tr><td id="%s" class="ig">%s</td></tr><tr><td class="small">%5.2f⊔%2.0f</td></tr></table></a>' % (per, np, g, g, pc, pf) 
         o += '<fh6>%d</fh6></td>' % len(sv)
-        o += '<td><button name="buy" type="submit" value="%s" disabled="yes"/>Buy</button><br/>' % name
+        o += '<td><button name="buy" type="submit" value="%s" disabled="yes"/>%s</button><br/>' % (name, loc['buy'][l])
         sv = sorted(v[2].keys())
         for g in sv:
             n2 += 1
@@ -298,9 +316,9 @@ def application(environ, start_response):
                 lis += '%s:%s ' % (a, vig[2][a])
             o += ' <a><table class="ig" title=""><tr><td class="ig">%s<p2 class="small">(%d)</p2></td></tr><tr><td class="small">%s</td></tr></table></a>' % (g, v[2][g], lis) 
         o += '<fh6>%d</fh6></td></tr>\n' % len(sv)
-    o += '<tr><td><i>Total (%d)<i></td><td> </td><td> </td><td class="num">%5.2f ⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(i, s, n1, n2)
-    o += '</table><form>'
-    o += '<table class="main" width="50%"><tr><th width="50">Currency</th><th width="10"> </th><th>Buy Ratio</th><th>Nominal Ratio</th><th>Sale Ratio</th><th>Nb of citizens</th><th>Total Government Tax</th></tr>'
+    o += '<tr><td colspan="3"><i>Total (%d)<i></td><td class="num">%5.2f ⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(i, s, n1, n2)
+    o += '</table></form>'
+    o += '<table class="main" width="50%%"><tr><th width="50">%s</th><th width="10"> </th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th></tr>' % (loc['cur'][l], loc['bra'][l], loc['nra'][l], loc['sra'][l], loc['nbc'][l], loc['tgt'][l])
     for c in __cur_ratio__:
         vtax = eval (dtax[c])
         o += '<tr><td>%s</td><td>%s</td><td class="num">%5.3f</td><td class="num">%5.3f</td><td class="num">%5.3f</td><td class="num">%05d</td><td class="num"><b>%7.2f %s</b></td><tr>' % (c, __cur_ratio__[c][0], __cur_ratio__[c][1], __cur_ratio__[c][2], __cur_ratio__[c][3], vtax[0], vtax[1], __cur_ratio__[c][0]) 
@@ -311,7 +329,7 @@ def application(environ, start_response):
     #if raw: o += "<pre>%s</pre>" % raw
     #o += "<pre>%s</pre>" % query
     o += foot(fr) + '</html>'
-    start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname)), ('set-cookie', 'lang=%s' % lang)])
+    start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))] + newcook)
     return [o.encode('utf-8')] 
 
 def head():
