@@ -19,7 +19,9 @@
 #    along with ⊔net.  If not, see <http://www.gnu.org/licenses/>.
 #-----------------------------------------------------------------------------
 
-import sys, re, os, math, random, urllib.parse, dbm, datetime, base64, hashlib, subprocess, shutil, smtplib
+import sys, re, os, math, random, urllib.parse, dbm, datetime, base64, hashlib, subprocess, shutil, smtplib, binascii
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import AES
 __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf-8').read().encode('utf-8')).digest())[:5]
 
 # constants defined by government banking authorities and should be very stable
@@ -168,7 +170,7 @@ def application(environ, start_response):
     if query == 'log':
         start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
         return [open('/u/log', 'r', encoding='utf-8').read().encode('utf-8')] 
-    if query == 'benhamou':
+    if query == 'fben':
         start_response('200 OK', [('Content-type', 'application/pdf'), ('Content-Disposition', 'filename={}'.format('EDLC.pdf'))])
         return [open('/home/pi/Economie_de_la_culture.pdf', 'rb').read()] 
     if query == 'reset':
@@ -190,18 +192,22 @@ def application(environ, start_response):
         dtax.close()
     d, dig, dtax = dbm.open('/u/net', 'c'), dbm.open('/u/ig', 'c'), dbm.open('/u/tax', 'c')
     raw, cb, fr, newcook = None, None, None, []
+    A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
+    IG_PRC, IG_CUST, IG_COAU, IG_FILE = 0, 1, 2, 3
     if environ['REQUEST_METHOD'].lower() == 'post':
         raw = environ['wsgi.input'].read().decode('utf-8')
         fr1 = None 
         m = re.match(r'(fr=on&|)', raw) # fr
         if m:
             fr1 = m.group(1)
-        m = re.match(r'(fr=on&|)adda=([^&]{2,16})&age=(\d\d)&cur=(\w{3})(&cb=on|)', raw) # Name + Age + Currency
+        m = re.match(r'(fr=on&|)adda=([^&]{2,16})&age=(\d\d)&cur=(\w{3})(&cb=on|)', raw) # Name + Currency + Ballance + Age + key
         if m:
             fr1, a, age, cur, cb = m.group(1), m.group(2), int(m.group(3)), m.group(4), m.group(4)
             if bytes(a, 'utf-8') not in agents:
                 now = '%s' % datetime.datetime.now()
-                d[a] = '%s' % [0, {}, {}, now[:-7], cur, 0, age]
+                k = RSA.generate(2048, os.urandom) 
+                ckey = bytes(' '.join([itob64(x).decode('ascii') for x in (k.e, k.d, k.n)]), 'ascii')
+                d[a] = '%s' % [0, {}, {}, now[:-7], cur, 0, age, ckey]
                 vtax = eval (dtax[cur])
                 vtax[0] += 1
                 dtax[cur] = '%s' % vtax
@@ -225,28 +231,34 @@ def application(environ, start_response):
             fr1, cb, s = m.group(1), m.group(2), m.group(3)
             now = '%s' % datetime.datetime.now()
             g = hashf(now.encode('utf-8'))
-            p, f, c = random.randint(1,1000)/100, random.randint(1,500)*100, 'content'
+            p, f, c = random.randint(1,1000)/100, random.randint(1,500)*100, b'this is an IG content'
             v = eval(d[s])
-            v[1][g] = 100
+            v[A_AUTH][g] = 100
             d[s] = '%s' % v 
-            dig[g] = '%s' % [(p,p,0), [], {s:10}, (p, f, 'signature1', 'the date1', c)] # 10 parts for initial author
+            k = [b64toi(x) for x in v[A_CKEY].split()]
+            signature = sign(k[1], k[2], c)
+            dig[g] = '%s' % [(p,p,0), [], {s:10}, (p, f, signature, 'the date1', c)] # 10 parts for initial author
         m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)share=([^\+]+)\+([\w\-]{4})$',raw) # share
         if m:
+            A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
+            IG_PRC, IG_CUST, IG_COAU, IG_FILE = 0, 1, 2, 3
             fr1, cb, s, g = m.group(1), m.group(2), m.group(3), m.group(4)  
             v = eval(dig[g])
-            v[2][s] = v[2].get(s,0) + 1
-            sumi = sum(v[2][x] for x in v[2])
-            for x in v[2]:
+            v[IG_COAU][s] = v[IG_COAU].get(s,0) + 1
+            sumi = sum(v[IG_COAU][x] for x in v[IG_COAU])
+            for x in v[IG_COAU]:
                 vnet = eval(d[x])
-                vnet[1][g] = v[2][x]*100/sumi
+                vnet[A_AUTH][g] = v[IG_COAU][x]*100/sumi
                 d[x] = '%s' % vnet
             dig[g] = '%s' % v 
-        #'Agent1' [23.43, {'ig1': 0.01},      {'ig2': 2},            '2013-01-11 16:21:19', 'JPY',   -2658.96]
-        # Name    Ballance  {author hash: %}, {custom hash: nb},     date,                 currency, local balance] 
+        #'Agent1' [23.43, {'ig1': 0.01},      {'ig2': 2},            '2013-01-11 16:21:19', 'JPY',   -2658.96,      KEY]
+        # Name    Ballance  {author hash: %}, {custom hash: nb},     date,                 currency, local balance, RSA key] 
         #'ig1'    [(6.57, 6.57, 0),        ['agent2',],   {'Agent1': 10, 'Agent2': 1}, (6.57, 11700, 'signature1', 'the date1', 'content')]
         # IG id   [(price, delta, refund), [custom list], {co-author: parts},             (p1,   pf,     signature,    date,       content
         m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)buy=([^\+]+)\+([\w\-]{4})$',raw) # buy
         if m: 
+            A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
+            IG_PRC, IG_CUST, IG_COAU, IG_FILE = 0, 1, 2, 3
             fr1, cb, b, g = m.group(1), m.group(2), m.group(3), m.group(4)  
             vb, vig = eval(d[b]), eval(dig[g])
             if vb[0] >= vig[0][0]:
@@ -349,39 +361,6 @@ Contact: <mail>laurent.fournier@cupfoundation.net</mail><br/>
 ⊔FOUNDATION is currently registered in Toulouse/France  SIREN: 399 661 602 00025<br/></h6>\n""" % __digest__.decode('utf-8')
     return o
 
-class cup_old:
-    xi = .25
-    def __init__(self, pop):
-        self.net = {a:[pop[a],{},{}] for a in pop}
-
-    def update(self, s, g):
-        i = len(self.net[s][1][g][1]) + 1
-        p1 = self.net[s][1][g][2][0]
-        pf = self.net[s][1][g][2][1]
-        k = math.log(pf-p1) - math.log(pf-2*p1)
-        p = (pf - (pf-p1)*math.exp(-self.xi*(i-1)*k))/i 
-        d = (pf-p1)*(math.exp(-self.xi*(i-2)*k) - math.exp(-self.xi*(i-1)*k))
-        self.net[s][1][g][0] = (p, d, (p-d)/(i-1))
-
-    def buy(self, b, s, g):
-        assert b in self.net and s in self.net and g in self.net[s][1]
-        if self.net[b][0] > self.net[s][1][g][0][0]:
-            for a in self.net[s][1][g][1]: self.net[a][0] += self.net[s][1][g][0][2] # refund
-            self.net[b][2][g] = s
-            self.net[b][0] -= self.net[s][1][g][0][0] # buyer price
-            self.net[s][0] += self.net[s][1][g][0][1] # seller income 
-            self.net[s][1][g][1].append(b) # add buyer
-            self.update(s, g)
-        else:
-            print ('Transaction refused! (negative balance)')
-
-    def sell(self, s, g, p, f, c):
-        assert s in self.net and p < f and p >= 0
-        self.net[s][1][g] = [(p,p,0), [], (p, f, 'signature1', 'the date1', c)]
-
-    def display(self):
-        print (self.net, '\nTotal ammount:', sum(self.net[a][0] for a in self.net))
-
 class cup:
     xi = .25
     def __init__(self, pop):
@@ -429,6 +408,44 @@ class cup:
         for g in self.ig:
             print ('IG:', g, self.ig[g])
 
+def itob64(n):
+    " utility to transform int to base64"
+    c = hex(n)[2:]
+    if len(c)%2: c = '0'+c
+    return re.sub(b'=*$', b'', base64.b64encode(bytes.fromhex(c)))
+
+def b64toi(c):
+    "transform base64 to int"
+    if c == '': return 0
+    return int.from_bytes(base64.b64decode(c + b'='*((4-(len(c)%4))%4)), 'big')
+
+def num(c):
+    return (4-(len(c)%4)%4)
+
+def H(*tab):
+    return int(hashlib.sha1(b''.join(bytes('%s' % i, 'ascii') for i in tab)).hexdigest(), 16)
+ 
+def crand(n=1024):  
+    return random.SystemRandom().getrandbits(n)
+
+def encrypt(e, n, msg):
+    skey = os.urandom(16)
+    iskey = int(binascii.hexlify(skey),16)
+    aes = AES.new(skey, AES.MODE_ECB)
+    return len(msg), itob64(pow(iskey, e, n)), aes.encrypt(msg+b'\0'*(16-len(msg)%16))
+
+def decrypt(d, n, lmsg, ckey, cmsg):
+    dd = pow(b64toi(ckey), d, n)   
+    thekey = bytes.fromhex(hex(dd)[2:])
+    aes2 = AES.new(thekey, AES.MODE_ECB)
+    return aes2.decrypt(cmsg)[:lmsg]
+
+def sign(d, n, msg):
+    return itob64(pow(H(msg), d, n))
+
+def verify(e, n, msg, s):
+    return (pow(b64toi(s), e, n) == H(msg)) 
+
 if __name__ == '__main__':
     u = cup({'agent1':90, 'agent2':200, 'agent3':300, 'agent4':10})
     for a in ('agent1', 'agent2'):
@@ -446,26 +463,25 @@ if __name__ == '__main__':
     u.buy('agent3', 'ig1')
     #u.display1()
  
-    print ('NET')
-    d = dbm.open('/u/net')
-    for x in d.keys():
-        print (x, d[x])
-    d.close()
-    print ('IG')
-    d = dbm.open('/u/ig')
-    for x in d.keys():
-        print (x, d[x])
-    d.close()
-    print ('TAX')
-    d = dbm.open('/u/tax')
-    for x in d.keys():
-        print (x, d[x])
-    d.close()
-    d = dbm.open('/u/net')
-    for x in d.keys():
-        v = eval(d[x])
-        for g in v[1]:
-            print (g, x)
-    d.close()
+    if True:
+        for b in ('/u/net', '/u/ig', '/u/tax'):
+            print (b)
+            d = dbm.open(b)
+            for x in d.keys():
+                print (x, '->', d[x])
+            d.close()
+
+    # TEST SIMPLE CRYPTO
+
+    k = RSA.generate(1024, os.urandom)
+    
+    msg = b"""this is a long message kdhsdkhjksdhkdshdsjkdskhksdjksdhdsfdffddfdfdf COUCOU dssdsdlkjdskljsd
+sds"""
+    s = sign(k.d, k.n, msg)            # sign
+    assert (verify(k.e, k.n, msg, s))  # verif
+    l, aa, bb = encrypt(k.e, k.n, msg) # encrypt
+    cc = decrypt(k.d, k.n, l, aa, bb)  # decrypt
+    
+
 
 # End ⊔net!
