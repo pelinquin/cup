@@ -19,18 +19,29 @@
 #    along with ⊔net.  If not, see <http://www.gnu.org/licenses/>.
 #-----------------------------------------------------------------------------
 
-import sys, re, os, math, random, urllib.parse, dbm, datetime, base64, hashlib, subprocess, shutil, smtplib, binascii
+import sys, re, os, math, random, urllib.parse, dbm, datetime, base64, hashlib, subprocess, shutil, smtplib, binascii, http.client
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES
 __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf-8').read().encode('utf-8')).digest())[:5]
 
-# constants defined by government banking authorities and should be very stable
-__cur_ratio__ = {'EUR':['€',0.731,0.820,0.923], 
-                 'USD':['$',0.998,1.064,1.107], 
-                 'GBP':['£',0.651,0.664,0.702], 
-                 'JPY':['¥',85.204,87.740,88.632], 
-                 'CNY':['Ұ',6.405,6.634,6.703],
-                 }
+# constants defined by government banking authorities and should be very stable !
+__cur_ratio__ = {
+    'EUR':['€',  0.731,  0.820,  0.923], 
+    'USD':['$',  0.998,  1.064,  1.107], 
+    'GBP':['£',  0.651,  0.664,  0.702], 
+    'JPY':['¥', 85.204, 87.740, 88.632], 
+    'CNY':['Ұ',  6.405,  6.634,  6.703],
+    }
+
+def test_today_currencies():
+    co, h = http.client.HTTPConnection('currencies.apps.grandtrunk.net'), {}
+    for c1 in __cur_ratio__:
+         for c2 in __cur_ratio__:
+             if c1 != c2:
+                 co.request('GET', '/getlatest/%s/%s' %(c1, c2))
+                 h[c1+c2] = float(co.getresponse().read())
+    co.close()
+    return h 
 
 loc = {
     'bal': ['Balance',                  'Solde'],
@@ -144,7 +155,7 @@ def hashf(s):
 
 def app_update(host):
     here = os.path.dirname(os.path.abspath(__file__))
-    # add security
+    # add security here !
     cmd = 'cd %s; ls' % here  if host == 'cup' else 'cd %s/..; rm -rf cup; git clone https://github.com/pelinquin/cup.git' % here 
     out, err = subprocess.Popen((cmd), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
     o = '<html><pre>Application Update...\n'
@@ -193,7 +204,11 @@ def application(environ, start_response):
     d, dig, dtax = dbm.open('/u/net', 'c'), dbm.open('/u/ig', 'c'), dbm.open('/u/tax', 'c')
     raw, cb, fr, newcook = None, None, None, []
     A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
-    IG_PRC, IG_CUST, IG_COAU, IG_FILE = 0, 1, 2, 3
+    IG_PRC, IG_CUST, IG_COAU, IG_FILE = 0, 1, 2, 3        
+    #'Agent1' [23.43, {'ig1': 0.01},      {'ig2': 2},            '2013-01-11 16:21:19', 'JPY',   -2658.96,      14, KEY]
+    # Name    Ballance  {author hash: %}, {custom hash: nb},     date,                 currency, local balance, Age RSA key] 
+    #'ig1'    [(6.57, 6.57, 0),        ['agent2',],   {'Agent1': 10, 'Agent2': 1}, (6.57, 11700, 'signature1', 'the date1', 'content')]
+    # IG id   [(price, delta, refund), [custom list], {co-author: parts},             (p1,   pf,     signature,    date,       content
     if environ['REQUEST_METHOD'].lower() == 'post':
         raw = environ['wsgi.input'].read().decode('utf-8')
         fr1 = None 
@@ -216,11 +231,11 @@ def application(environ, start_response):
             fr1, cb, name, montant = m.group(1), m.group(2), m.group(3), m.group(4)
             v = eval(d[name])
             mont = - int (montant) if cb else int(montant)
-            if v[0] + mont >= 0:
-                c = v[4]
-                v[0] += mont
+            if v[A_UBAL] + mont >= 0:
+                c = v[A_CURR]
+                v[A_UBAL] += mont
                 ra = __cur_ratio__[c][1] if cb else __cur_ratio__[c][3]
-                v[5] -= mont * ra
+                v[A_LBAL] -= mont * ra
                 vtax = eval (dtax[c])
                 delta = __cur_ratio__[c][1] - __cur_ratio__[c][2] if cb else __cur_ratio__[c][3] - __cur_ratio__[c][2]
                 vtax[1] += mont * delta
@@ -240,8 +255,6 @@ def application(environ, start_response):
             dig[g] = '%s' % [(p,p,0), [], {s:10}, (p, f, signature, 'the date1', c)] # 10 parts for initial author
         m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)share=([^\+]+)\+([\w\-]{4})$',raw) # share
         if m:
-            A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
-            IG_PRC, IG_CUST, IG_COAU, IG_FILE = 0, 1, 2, 3
             fr1, cb, s, g = m.group(1), m.group(2), m.group(3), m.group(4)  
             v = eval(dig[g])
             v[IG_COAU][s] = v[IG_COAU].get(s,0) + 1
@@ -251,35 +264,31 @@ def application(environ, start_response):
                 vnet[A_AUTH][g] = v[IG_COAU][x]*100/sumi
                 d[x] = '%s' % vnet
             dig[g] = '%s' % v 
-        #'Agent1' [23.43, {'ig1': 0.01},      {'ig2': 2},            '2013-01-11 16:21:19', 'JPY',   -2658.96,      KEY]
-        # Name    Ballance  {author hash: %}, {custom hash: nb},     date,                 currency, local balance, RSA key] 
-        #'ig1'    [(6.57, 6.57, 0),        ['agent2',],   {'Agent1': 10, 'Agent2': 1}, (6.57, 11700, 'signature1', 'the date1', 'content')]
-        # IG id   [(price, delta, refund), [custom list], {co-author: parts},             (p1,   pf,     signature,    date,       content
         m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)buy=([^\+]+)\+([\w\-]{4})$',raw) # buy
         if m: 
-            A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
-            IG_PRC, IG_CUST, IG_COAU, IG_FILE = 0, 1, 2, 3
+            #A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
+            #IG_PRC, IG_CUST, IG_COAU, IG_FILE = 0, 1, 2, 3
             fr1, cb, b, g = m.group(1), m.group(2), m.group(3), m.group(4)  
             vb, vig = eval(d[b]), eval(dig[g])
-            if vb[0] >= vig[0][0]:
-                for a in vig[1]: 
+            if vb[A_UBAL] >= vig[IG_PRC][0]:
+                for a in vig[IG_CUST]: 
                     va = eval(d[a])
-                    va[0] += vig[0][2]                                              # 1/ refund the other buyers
+                    va[A_UBAL] += vig[IG_PRC][2]                                              # 1/ refund the other buyers
                     d[a] = '%s' % va
                 vb = eval(d[b])
-                vb[2][g] = vb[2].get(g,0) + 1                                       # 2/ add nb of bought ig to buyer 
-                vb[0] -= vig[0][0]                                                  # 3/ buyer pay the price
+                vb[A_CUST][g] = vb[A_CUST].get(g,0) + 1                                       # 2/ add nb of bought ig to buyer 
+                vb[A_UBAL] -= vig[IG_PRC][0]                                                  # 3/ buyer pay the price
                 d[b] = '%s' % vb
-                for s in vig[2]: 
+                for s in vig[IG_COAU]: 
                     vs = eval(d[s])
-                    vs[0] += vig[0][1]*vs[1][g]/100                                 # 4/ all sellers receive payement (income)
+                    vs[A_UBAL] += vig[IG_PRC][1]*vs[A_AUTH][g]/100                                 # 4/ all sellers receive payement (income)
                     d[s] = '%s' % vs
-                vig[1].append(b)                                                    # 5/ add buyer to ig hash
-                i, p1, pf = len(vig[1]) + 1, vig[3][0], vig[3][1]                   # 6/ get nb, p1, pf
+                vig[IG_CUST].append(b)                                                    # 5/ add buyer to ig hash
+                i, p1, pf = len(vig[IG_CUST]) + 1, vig[IG_FILE][0], vig[IG_FILE][1]                   # 6/ get nb, p1, pf
                 k, xi = math.log(pf-p1) - math.log(pf-2*p1), .25          
                 p = (pf - (pf-p1)*math.exp(-xi*(i-1)*k))/i                          # new price
                 dt = (pf-p1)*(math.exp(-xi*(i-2)*k) - math.exp(-xi*(i-1)*k))        # new delta
-                vig[0] = (p, dt, (p-dt)/(i-1))                                      # 7/ update prices            
+                vig[IG_PRC] = (p, dt, (p-dt)/(i-1))                                      # 7/ update prices            
                 dig[g] = '%s' % vig
         fr = 'on' if fr1 else None
         newcook = [('set-cookie', 'fr=%s' % fr)]
@@ -301,34 +310,36 @@ def application(environ, start_response):
     o += '<label title="\'+\': convert money to ⊔ ... \'-\': convert ⊔ to money" style="width: 40px;" class="toggle candy"><input name="cb" id="cb" type="checkbox"%s/><p>%s<span>-</span><span>+</span></p><a class="slide-button"></a></label>' % (disp, loc['bal'][l])
     o += '</th><th rowspan="2">%s</th><th rowspan="2">%s</th></tr>\n' % (loc['cIG'][l], loc['bIG'][l])
     o += '<tr><td colspan="4" class="num"><input type="submit"/></td></tr>\n'
-    i, s, n1, n2 = 0, 0, 0, 0
+    ia, su, n1, n2 = 0, 0, 0, 0
     for x in d.keys():
-        i += 1
+        ia += 1
         v = eval(d[x])
-        s += v[0]
+        su += v[A_UBAL]
         name = x.decode('utf-8')
-        o += '<tr><td title="created %s">%s</td>' % (v[3], name)
-        o += '<td title="years old">%d</td>' % v[6]
-        o += '<td class="num" title="%s is registered with %s currency">%5.2f%s<br/>%s</td>' % (name, v[4], v[5], __cur_ratio__[v[4]][0], v[4])
-        o += '<td class="num">%5.2f ⊔<br/><input name="%s" type="submit" title="provision 1⊔ to/from the account" value="1"/><input name="%s" type="submit" title="provision 10⊔ to/from the account" value="10"/><input name="%s" type="submit" title="provision 100⊔ to/from the account" value="100"/></td><td onclick="f(event);"><input name="@%s" type="submit" value="%s"/><button name="share" type="submit" value="%s" disabled="yes">%s</button><br/>' % (v[0], name, name, name,  name, loc['new'][l], name, loc['sha'][l])  
-        sv = sorted(v[1].keys())
+        o += '<tr><td title="created %s">%s</td>' % (v[A_DATE], name)
+        o += '<td title="years old">%d</td>' % v[A_AAGE]
+        o += '<td class="num" title="%s is registered with %s currency">%5.2f%s<br/>%s</td>' % (name, v[A_CURR], v[A_LBAL], __cur_ratio__[v[A_CURR]][0], v[A_CURR])
+        o += '<td class="num">%5.2f ⊔<br/><input name="%s" type="submit" title="provision 1⊔ to/from the account" value="1"/><input name="%s" type="submit" title="provision 10⊔ to/from the account" value="10"/><input name="%s" type="submit" title="provision 100⊔ to/from the account" value="100"/></td><td onclick="f(event);"><input name="@%s" type="submit" value="%s"/><button name="share" type="submit" value="%s" disabled="yes">%s</button><br/>' % (v[A_UBAL], name, name, name,  name, loc['new'][l], name, loc['sha'][l])  
+        #A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
+        #IG_PRC, IG_CUST, IG_COAU, IG_FILE = 0, 1, 2, 3
+        sv = sorted(v[A_AUTH].keys())
         for g in sv:
             n1 += 1
             vig = eval(dig[g])
-            per, pc, pf, np = v[1][g], vig[0][0], vig[3][1], vig[2][name]
+            per, pc, pf, np = v[A_AUTH][g], vig[IG_PRC][0], vig[IG_FILE][1], vig[IG_COAU][name]
             o += ' <a><table class="ig" title="%5.2f %% (%s parts)"><tr><td id="%s" class="ig">%s</td></tr><tr><td class="small">%5.2f⊔%2.0f</td></tr></table></a>' % (per, np, g, g, pc, pf) 
         o += '<fh6>%d</fh6></td>' % len(sv)
         o += '<td><button name="buy" type="submit" value="%s" disabled="yes"/>%s</button><br/>' % (name, loc['buy'][l])
-        sv = sorted(v[2].keys())
+        sv = sorted(v[A_CUST].keys())
         for g in sv:
             n2 += 1
             vig = eval(dig[g])
             lis = ''
-            for a in vig[2]:
-                lis += '%s:%s ' % (a, vig[2][a])
-            o += ' <a><table class="ig" title=""><tr><td class="ig">%s<p2 class="small">(%d)</p2></td></tr><tr><td class="small">%s</td></tr></table></a>' % (g, v[2][g], lis) 
+            for a in vig[IG_COAU]:
+                lis += '%s:%s ' % (a, vig[IG_COAU][a])
+            o += ' <a><table class="ig" title=""><tr><td class="ig">%s<p2 class="small">(%d)</p2></td></tr><tr><td class="small">%s</td></tr></table></a>' % (g, v[A_CUST][g], lis) 
         o += '<fh6>%d</fh6></td></tr>\n' % len(sv)
-    o += '<tr><td colspan="3"><i>Total (%d)<i></td><td class="num">%5.2f ⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(i, s, n1, n2)
+    o += '<tr><td colspan="3"><i>Total (%d)<i></td><td class="num">%5.2f ⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(ia, su, n1, n2)
     o += '</table></form>'
     o += '<table class="main" width="50%%"><tr><th width="50">%s</th><th width="10"> </th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th></tr>' % (loc['cur'][l], loc['bra'][l], loc['nra'][l], loc['sra'][l], loc['nbc'][l], loc['tgt'][l])
     for c in __cur_ratio__:
@@ -367,10 +378,6 @@ class cup:
         self.net = {a:[pop[a],{},{}] for a in pop}
         self.ig = {}
 
-    #'Agent1' [23.43, {'ig1': 0.0999}, {'ig2': 2}, '2013-01-11 16:21:19', 'JPY',   -2658.96]
-    # Name    Ballance  {author hash}, {custom hash},     date,                 currency, local balance 
-    #'ig1'    [(6.57, 6.57, 0),        ['ig2','ig3'], {'Agent1': 10, 'Agent2': 1}, (6.57, 11700, 'signature1', 'the date1', 'content')]
-    # Id      [(price, delta, refund), [ig list    ], {co-author parts},             (p1,   pf,     signature,    date,        content) ]
     def buy(self, b, g):
         assert b in self.net
         if self.net[b][0] > self.ig[g][0][0]:                                                # 0/ if balance buyer > ig price 
@@ -435,9 +442,9 @@ def encrypt(e, n, msg):
     return len(msg), itob64(pow(iskey, e, n)), aes.encrypt(msg+b'\0'*(16-len(msg)%16))
 
 def decrypt(d, n, lmsg, ckey, cmsg):
-    dd = pow(b64toi(ckey), d, n)   
-    thekey = bytes.fromhex(hex(dd)[2:])
-    aes2 = AES.new(thekey, AES.MODE_ECB)
+    c = hex(pow(b64toi(ckey), d, n))[2:]
+    if len(c)%2: c = '0'+c
+    aes2 = AES.new(bytes.fromhex(c), AES.MODE_ECB)
     return aes2.decrypt(cmsg)[:lmsg]
 
 def sign(d, n, msg):
@@ -472,9 +479,7 @@ if __name__ == '__main__':
             d.close()
 
     # TEST SIMPLE CRYPTO
-
     k = RSA.generate(1024, os.urandom)
-    
     msg = b"""this is a long message kdhsdkhjksdhkdshdsjkdskhksdjksdhdsfdffddfdfdf COUCOU dssdsdlkjdskljsd
 sds"""
     s = sign(k.d, k.n, msg)            # sign
@@ -482,6 +487,5 @@ sds"""
     l, aa, bb = encrypt(k.e, k.n, msg) # encrypt
     cc = decrypt(k.d, k.n, l, aa, bb)  # decrypt
     
-
 
 # End ⊔net!
