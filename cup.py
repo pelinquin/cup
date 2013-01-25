@@ -24,16 +24,19 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES
 __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf-8').read().encode('utf-8')).digest())[:5]
 
-# constants defined by government banking authorities and should be as stable as possible while shoud pass test bellow!
+# constants defined by government banking authorities and should be as stable as possible while should pass the test bellow!
 __cur_ratio__ = {
-    'EUR':['€',  0.731,  0.820,  0.923], 
-    'USD':['$',  0.998,  1.064,  1.107], 
-    'GBP':['£',  0.651,  0.664,  0.702], 
-    'JPY':['¥', 82.204, 87.740, 92.632], 
-    'CNY':['Ұ',  6.405,  6.634,  6.703],
+    'EUR':[' €',  0.781,  0.820,  0.870], 
+    'USD':[' $',  0.998,  1.064,  1.107],
+    'CAD':[' $',  0.990,  1.062,  1.102], 
+    'GBP':[' £',  0.651,  0.664,  0.702], 
+    'JPY':[' ¥', 81.104, 87.740, 94.832], 
+    'CNY':[' Ұ',  6.405,  6.634,  6.703],
+    'BRL':['R$',  2.152,  2.234,  2.275],
     }
 
 def get_today_rates():
+    "_"
     co, h = http.client.HTTPConnection('currencies.apps.grandtrunk.net'), {}
     for c1 in __cur_ratio__:
          for c2 in __cur_ratio__:
@@ -44,8 +47,17 @@ def get_today_rates():
     return h 
 
 def test_cup_ratios():
+    "_"
     now = '%s' % datetime.datetime.now()
-    h, o, ko = get_today_rates(), '<p title="The test checks that first that taxes are positives and second it is never valuable to exchange from one local currency to another using ⊔ as intermediate.">⊔ currencies rates test (%s): ' % now[:-7], False
+    o, ko = '<p title="The test checks that first that taxes are positives and second it is never valuable to exchange from one local currency to another using ⊔ as intermediate.">%s: ⊔ currencies rates test: ' % now[:10], False 
+    dtax = dbm.open('/u/tax', 'w')
+    if dtax[b'TODAY'] != bytes(now[:10],'ascii'):
+        h = get_today_rates() # only once a day!
+        dtax['HASH'] = '%s' % h
+        dtax[b'TODAY'] = '%s' % now[:10]
+    else:
+        h = eval(dtax['HASH'])
+    dtax.close()
     for r in __cur_ratio__:
         if (__cur_ratio__[r][1] > __cur_ratio__[r][2]) or (__cur_ratio__[r][2] > __cur_ratio__[r][3]):
             ko = True
@@ -55,7 +67,7 @@ def test_cup_ratios():
         t =  __cur_ratio__[r2][3]/__cur_ratio__[r1][1]
         if t < h[r] :
             ko = True
-            o += '<br/><b class="red">ERROR: %s:%s:%s</b>' % (r1, r2, t-h[r])
+            o += '<br/><b class="red">ERROR: %s/%s: %5.2f</b>' % (r1, r2, 100*(t-h[r])/h[r])
     if not ko:
         o += '<b>pass</b>'
     return o + '</p>\n'
@@ -68,14 +80,15 @@ loc = {
     'cIG': ['Created Intangible Goods', 'Biens immatériel créés'],
     'bIG': ['Bought Intangible Goods',  'Biens immatériel achetés'],
     'cur': ['Currency',                 'Monnaie'],
-    'bra': ['Buy Ratio',                'Taux d\'achat'],  	
-    'nra': ['Nominal Ratio',            'Taux nominal'],	
-    'sra': ['Sale Ratio',               'Taux de vente'],	
+    'bra': ['Buy ⊔ Ratio',              'Taux d\'achat /⊔'],  	
+    'nra': ['Nominal ⊔ Ratio',          'Taux nominal /⊔'],	
+    'sra': ['Sale ⊔ Ratio',             'Taux de vente /⊔'],	
     'nbc': ['Nb of citizens',           'Nombre de citoyens'],	
     'tgt': ['Total Government Tax',     'Montant total des taxes'],
     }
 
 def style():
+    "_"
     return """<style type="text/css"> 
 h1,h2,h3,h4,h5,h6,input,a,p,td,th,fh6{font-family:helvetica neue,helvetica,arial,sans-serif;}
 h1,h2 {background-color:#F4F4F4; font-size:64;}
@@ -129,6 +142,7 @@ td.ig {font-family:monospace;font-size:16px;border:none;text-align:center; heigt
 """
 
 def script():
+    "_"
     return """<script type="text/ecmascript">\n/*<![CDATA[*//*---->*/\n
 var sel;
 
@@ -172,6 +186,7 @@ def hashf(s):
     return base64.urlsafe_b64encode(hashlib.sha1(s).digest())[:-24].decode('utf-8')
 
 def app_update(host):
+    "_"
     here = os.path.dirname(os.path.abspath(__file__))
     # add security here !
     cmd = 'cd %s; ls' % here  if host == 'cup' else 'cd %s/..; rm -rf cup; git clone https://github.com/pelinquin/cup.git' % here 
@@ -185,6 +200,17 @@ def log(s, ip=''):
     "Append log"
     now = '%s' % datetime.datetime.now()
     open('/u/log', 'a', encoding='utf-8').write('%s|%s|%s\n' % (now[:-7], ip, s))
+
+def app_verify(environ, start_response):
+    "_"
+    o, net, dig, tax = '', dbm.open('/u/net', 'c'), dbm.open('/u/ig', 'c'), dbm.open('/u/tax', 'c')
+    for ig in dig.keys():
+        o += '%s %s\n' % (ig, dig[ig])
+    net.close()
+    dig.close()
+    tax.close()
+    start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
+    return [o.encode('utf-8')]
 
 def application(environ, start_response):
     """ WSGI Web application """
@@ -206,6 +232,7 @@ def application(environ, start_response):
         subprocess.Popen(('rm', '/u/net.db', '/u/ig.db', '/u/tax.db'),).communicate()
         start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
         return ['RESET DATABASE OK!'.encode('utf-8')]
+    if query == 'verify': return app_verify(environ, start_response)
     o = '<?xml version="1.0" encoding="utf-8"?>\n<html>\n' 
     o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
     o += '<link href="http://fonts.googleapis.com/css?family=Schoolbell" rel="stylesheet" type="text/css">\n' 
@@ -217,6 +244,7 @@ def application(environ, start_response):
         d.close()
     if not os.path.isfile('/u/tax.db'):
         dtax = dbm.open('/u/tax', 'c')
+        dtax[b'TODAY'] = b'hello'
         for x in __cur_ratio__: dtax[x] = '%s' % [0, 0.00]
         dtax.close()
     d, dig, dtax = dbm.open('/u/net', 'c'), dbm.open('/u/ig', 'c'), dbm.open('/u/tax', 'c')
@@ -225,8 +253,8 @@ def application(environ, start_response):
     IG_PRC, IG_CUST, IG_COAU, IG_FILE = 0, 1, 2, 3        
     #'Agent1' [23.43, {'ig1': 0.01},      {'ig2': 2},            '2013-01-11 16:21:19', 'JPY',   -2658.96,      14, KEY]
     # Name    Ballance  {author hash: %}, {custom hash: nb},     date,                 currency, local balance, Age RSA key] 
-    #'ig1'    [(6.57, 6.57, 0),        ['agent2',],   {'Agent1': 10, 'Agent2': 1}, (6.57, 11700, 'signature1', 'the date1', 'content')]
-    # IG id   [(price, delta, refund), [custom list], {co-author: parts},             (p1,   pf,     signature,    date,       content
+    #'ig1'    [(6.57, 6.57, 0),        ['agent2',],   {'Agent1': 10, 'Agent2': 1}, (6.57, 11700, 'signature1', 'the date1', 'encrypted content')]
+    # IG id   [(price, delta, refund), [custom list], {co-author: parts},             (p1,   pf,     signature,    date,       encrypt_content
     if environ['REQUEST_METHOD'].lower() == 'post':
         raw = environ['wsgi.input'].read().decode('utf-8')
         fr1 = None 
@@ -264,13 +292,15 @@ def application(environ, start_response):
             fr1, cb, s = m.group(1), m.group(2), m.group(3)
             now = '%s' % datetime.datetime.now()
             g = hashf(now.encode('utf-8'))
-            p, f, c = random.randint(1,1000)/100, random.randint(1,500)*100, b'this is an IG content'
+            p, f, c = random.randint(1,1000)/100, random.randint(1,500)*100, bytes('This is an test content for %s' % (g), 'utf-8')
             v = eval(d[s])
             v[A_AUTH][g] = 100
             d[s] = '%s' % v 
             k = [b64toi(x) for x in v[A_CKEY].split()]
-            signature = sign(k[1], k[2], c)
-            dig[g] = '%s' % [(p,p,0), [], {s:10}, (p, f, signature, 'the date1', c)] # 10 parts for initial author
+            l, cont1, cont2 = encrypt(k[0], k[2], c)
+            content = '%d %s %s' % (l,cont1,cont2)
+            signature = sign(k[1], k[2], content)
+            dig[g] = '%s' % [(p,p,0), [], {s:10}, (p, f, signature, 'the date1', content)] # 10 parts for initial author
         m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)share=([^\+]+)\+([\w\-]{4})$',raw) # share
         if m:
             fr1, cb, s, g = m.group(1), m.group(2), m.group(3), m.group(4)  
@@ -284,28 +314,26 @@ def application(environ, start_response):
             dig[g] = '%s' % v 
         m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)buy=([^\+]+)\+([\w\-]{4})$',raw) # buy
         if m: 
-            #A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
-            #IG_PRC, IG_CUST, IG_COAU, IG_FILE = 0, 1, 2, 3
             fr1, cb, b, g = m.group(1), m.group(2), m.group(3), m.group(4)  
             vb, vig = eval(d[b]), eval(dig[g])
             if vb[A_UBAL] >= vig[IG_PRC][0]:
                 for a in vig[IG_CUST]: 
                     va = eval(d[a])
-                    va[A_UBAL] += vig[IG_PRC][2]                                              # 1/ refund the other buyers
+                    va[A_UBAL] += vig[IG_PRC][2]                                         # 1/ refund the other buyers
                     d[a] = '%s' % va
                 vb = eval(d[b])
-                vb[A_CUST][g] = vb[A_CUST].get(g,0) + 1                                       # 2/ add nb of bought ig to buyer 
-                vb[A_UBAL] -= vig[IG_PRC][0]                                                  # 3/ buyer pay the price
+                vb[A_CUST][g] = vb[A_CUST].get(g,0) + 1                                  # 2/ add nb of bought ig to buyer 
+                vb[A_UBAL] -= vig[IG_PRC][0]                                             # 3/ buyer pay the price
                 d[b] = '%s' % vb
                 for s in vig[IG_COAU]: 
                     vs = eval(d[s])
-                    vs[A_UBAL] += vig[IG_PRC][1]*vs[A_AUTH][g]/100                                 # 4/ all sellers receive payement (income)
+                    vs[A_UBAL] += vig[IG_PRC][1]*vs[A_AUTH][g]/100                       # 4/ all sellers receive payement (income)
                     d[s] = '%s' % vs
-                vig[IG_CUST].append(b)                                                    # 5/ add buyer to ig hash
-                i, p1, pf = len(vig[IG_CUST]) + 1, vig[IG_FILE][0], vig[IG_FILE][1]                   # 6/ get nb, p1, pf
+                vig[IG_CUST].append(b)                                                   # 5/ add buyer to ig hash
+                i, p1, pf = len(vig[IG_CUST]) + 1, vig[IG_FILE][0], vig[IG_FILE][1]      # 6/ get nb, p1, pf
                 k, xi = math.log(pf-p1) - math.log(pf-2*p1), .25          
-                p = (pf - (pf-p1)*math.exp(-xi*(i-1)*k))/i                          # new price
-                dt = (pf-p1)*(math.exp(-xi*(i-2)*k) - math.exp(-xi*(i-1)*k))        # new delta
+                p = (pf - (pf-p1)*math.exp(-xi*(i-1)*k))/i                   # new price
+                dt = (pf-p1)*(math.exp(-xi*(i-2)*k) - math.exp(-xi*(i-1)*k)) # new delta
                 vig[IG_PRC] = (p, dt, (p-dt)/(i-1))                                      # 7/ update prices            
                 dig[g] = '%s' % vig
         fr = 'on' if fr1 else None
@@ -321,7 +349,7 @@ def application(environ, start_response):
     o += '<th width="50"><select name="cur" title="select the official money before creating an agent">'
     o += '<option value="">Cur.</option>' 
     for m in __cur_ratio__:
-        o += '<option title="ratio %s/⊔:%s/%s/%s" value="%s">%s</option>' % (__cur_ratio__[m][0], __cur_ratio__[m][1], __cur_ratio__[m][2], __cur_ratio__[m][3], m, __cur_ratio__[m][0])
+        o += '<option title="ratio %s/⊔:%s/%s/%s" value="%s">%s %s</option>' % (__cur_ratio__[m][0], __cur_ratio__[m][1], __cur_ratio__[m][2], __cur_ratio__[m][3], m, m, __cur_ratio__[m][0])
     o += '</select></th>'
     o += '<th width="120">'
     disp = ' checked' if cb else ''
@@ -359,27 +387,31 @@ def application(environ, start_response):
         o += '<fh6>%d</fh6></td></tr>\n' % len(sv)
     o += '<tr><td colspan="3"><i>Total (%d)<i></td><td class="num">%5.2f ⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(ia, su, n1, n2)
     o += '</table></form>'
-    o += '<table class="main" width="50%%"><tr><th width="50" colspan="2">%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th></tr>' % (loc['cur'][l], loc['bra'][l], loc['nra'][l], loc['sra'][l], loc['nbc'][l], loc['tgt'][l])
+    o += '<table class="main" width="50%%"><tr><th width="50" colspan="2">%s</th><th>%s</th><th width="30">&larr;%%&rarr;</th><th>%s</th><th width="30">&larr;%%&rarr;</th><th>%s</th><th>%s</th><th>%s</th></tr>' % (loc['cur'][l], loc['bra'][l], loc['nra'][l], loc['sra'][l], loc['nbc'][l], loc['tgt'][l])
     for c in __cur_ratio__:
         vtax = eval (dtax[c])
-        o += '<tr><td width="30">%s</td><td width="10">%s</td><td class="num">%5.3f</td><td class="num">%5.3f</td><td class="num">%5.3f</td><td class="num">%05d</td><td class="num"><b>%7.2f %s</b></td><tr>' % (c, __cur_ratio__[c][0], __cur_ratio__[c][1], __cur_ratio__[c][2], __cur_ratio__[c][3], vtax[0], vtax[1], __cur_ratio__[c][0]) 
+        deltab = 100*(__cur_ratio__[c][2] - __cur_ratio__[c][1])/__cur_ratio__[c][2]
+        deltas = 100*(__cur_ratio__[c][3] - __cur_ratio__[c][2])/__cur_ratio__[c][2]
+        o += '<tr><td width="30">%s</td><td width="10">%s</td><td class="num">%5.3f</td><td class="num">%5.2f</td><td class="num">%5.3f</td><td class="num">%5.2f</td><td class="num">%5.3f</td><td class="num">%05d</td><td class="num"><b>%7.2f %s</b></td><tr>' % (c, __cur_ratio__[c][0], __cur_ratio__[c][1], deltab, __cur_ratio__[c][2], deltas, __cur_ratio__[c][3], vtax[0], vtax[1], __cur_ratio__[c][0]) 
     o += '</table>'
     d.close()
     dig.close()
     dtax.close()
     #if raw: o += "<pre>%s</pre>" % raw
     #o += "<pre>%s</pre>" % query
-    o += test_cup_ratios()
+    o += test_cup_ratios() 
     o += foot(fr) + '</html>'
     start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))] + newcook)
     return [o.encode('utf-8')] 
 
 def head():
+    "_"
     return """\n<title>The ⊔Foundation</title>
 <h1 title="the 'cup' Foundation"><a href="http://www.cupfoundation.net/">⊔<n1>Simulation</n1></a></h1>
 <div class="logo"><svg xmlns="http://www.w3.org/2000/svg" width="70"><path stroke-width="0" fill="Dodgerblue" stroke="none" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></svg></div>\n"""
 
 def foot(fr):
+    "_"
     if fr:
         o = """\n<p><p1>Aide :</p1> Pour ajouter un agent, choisir un nom inconnu, donnez un age et une monnaie courante. Créer au moins deux ou trois<br/>
 Positionnez l'interrupteur sur '+', puis provisionner alors des ⊔ en utilisant les boutons '1', '10' ou '100' afin que l'agent courant puisse acheter des IGs (Bien Immatériel). Créer pour un agent (artiste) plusieurs IGs en utilisant le bouton 'New'. Les prix sont fixés aléatoirement. Pour simuler le partage de la création d'un IG, sélectionner un IG et choisir un bouton "share" d'un agent pour lui ajouter une part (l'auteur initial a 10 parts). Pour simuler une vente, sélectionner un IG créé et pressez alors un bouton d'un acheteur potentiel de cet IG. Pour simuler un mécénat, acheter par le même agent plusieurs fois le même bien. Tout artiste peut convertir ses ⊔ en argent local en positionnant l'interrupteur sur '-'. Vérifier que la somme totale en ⊔ n'a pas changé lors de l'achat d'un IG. Vérifier aussi que le revenu de l'auteur est croissant et qu'il y a remboursement des précédents acheteurs. Remarquer que pour un artiste achetant ses propres créations, son solde ne change pas, seulement le prix courant décroit.</p>"""
@@ -499,8 +531,7 @@ if __name__ == '__main__':
 
     # TEST SIMPLE CRYPTO
     k = RSA.generate(1024, os.urandom)
-    msg = b"""this is a long message kdhsdkhjksdhkdshdsjkdskhksdjksdhdsfdffddfdfdf COUCOU dssdsdlkjdskljsd
-sds"""
+    msg = b"""this is a long message kdhsdkhjksdhkdshdsjkdskhksdjksdhdsfdffddfdfdf COUCOU dssdsdlkjdskljsdsds"""
     s = sign(k.d, k.n, msg)            # sign
     assert (verify(k.e, k.n, msg, s))  # verif
     l, aa, bb = encrypt(k.e, k.n, msg) # encrypt
