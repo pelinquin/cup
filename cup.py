@@ -24,16 +24,16 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES
 __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf-8').read().encode('utf-8')).digest())[:5]
 
-# constants defined by government banking authorities and should be very stable !
+# constants defined by government banking authorities and should be as stable as possible while shoud pass test bellow!
 __cur_ratio__ = {
     'EUR':['€',  0.731,  0.820,  0.923], 
     'USD':['$',  0.998,  1.064,  1.107], 
     'GBP':['£',  0.651,  0.664,  0.702], 
-    'JPY':['¥', 85.204, 87.740, 88.632], 
+    'JPY':['¥', 82.204, 87.740, 92.632], 
     'CNY':['Ұ',  6.405,  6.634,  6.703],
     }
 
-def test_today_currencies():
+def get_today_rates():
     co, h = http.client.HTTPConnection('currencies.apps.grandtrunk.net'), {}
     for c1 in __cur_ratio__:
          for c2 in __cur_ratio__:
@@ -42,6 +42,23 @@ def test_today_currencies():
                  h[c1+c2] = float(co.getresponse().read())
     co.close()
     return h 
+
+def test_cup_ratios():
+    now = '%s' % datetime.datetime.now()
+    h, o, ko = get_today_rates(), '<p title="The test checks that first that taxes are positives and second it is never valuable to exchange from one local currency to another using ⊔ as intermediate.">⊔ currencies rates test (%s): ' % now[:-7], False
+    for r in __cur_ratio__:
+        if (__cur_ratio__[r][1] > __cur_ratio__[r][2]) or (__cur_ratio__[r][2] > __cur_ratio__[r][3]):
+            ko = True
+            o += '<br/><b class="red">ERROR: rates for %s</b>' % r
+    for r in h:
+        r1, r2 = r[:3], r[3:]
+        t =  __cur_ratio__[r2][3]/__cur_ratio__[r1][1]
+        if t < h[r] :
+            ko = True
+            o += '<br/><b class="red">ERROR: %s:%s:%s</b>' % (r1, r2, t-h[r])
+    if not ko:
+        o += '<b>pass</b>'
+    return o + '</p>\n'
 
 loc = {
     'bal': ['Balance',                  'Solde'],
@@ -69,6 +86,7 @@ net{font-variant: small-caps; text-decoration:underline;}
 it{text-decoration:underline;font-style: italic; font-family: times}
 sc{font-variant: small-caps}
 a{text-decoration:none;}
+b.red{color:red;}
 h1,a{color:Dodgerblue;}
 h6 {text-align:right;color:#CCC;background-color:#F4F4F4;}
 td.num {text-align:right;}
@@ -341,16 +359,17 @@ def application(environ, start_response):
         o += '<fh6>%d</fh6></td></tr>\n' % len(sv)
     o += '<tr><td colspan="3"><i>Total (%d)<i></td><td class="num">%5.2f ⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(ia, su, n1, n2)
     o += '</table></form>'
-    o += '<table class="main" width="50%%"><tr><th width="50">%s</th><th width="10"> </th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th></tr>' % (loc['cur'][l], loc['bra'][l], loc['nra'][l], loc['sra'][l], loc['nbc'][l], loc['tgt'][l])
+    o += '<table class="main" width="50%%"><tr><th width="50" colspan="2">%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th><th>%s</th></tr>' % (loc['cur'][l], loc['bra'][l], loc['nra'][l], loc['sra'][l], loc['nbc'][l], loc['tgt'][l])
     for c in __cur_ratio__:
         vtax = eval (dtax[c])
-        o += '<tr><td>%s</td><td>%s</td><td class="num">%5.3f</td><td class="num">%5.3f</td><td class="num">%5.3f</td><td class="num">%05d</td><td class="num"><b>%7.2f %s</b></td><tr>' % (c, __cur_ratio__[c][0], __cur_ratio__[c][1], __cur_ratio__[c][2], __cur_ratio__[c][3], vtax[0], vtax[1], __cur_ratio__[c][0]) 
+        o += '<tr><td width="30">%s</td><td width="10">%s</td><td class="num">%5.3f</td><td class="num">%5.3f</td><td class="num">%5.3f</td><td class="num">%05d</td><td class="num"><b>%7.2f %s</b></td><tr>' % (c, __cur_ratio__[c][0], __cur_ratio__[c][1], __cur_ratio__[c][2], __cur_ratio__[c][3], vtax[0], vtax[1], __cur_ratio__[c][0]) 
     o += '</table>'
     d.close()
     dig.close()
     dtax.close()
     #if raw: o += "<pre>%s</pre>" % raw
     #o += "<pre>%s</pre>" % query
+    o += test_cup_ratios()
     o += foot(fr) + '</html>'
     start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))] + newcook)
     return [o.encode('utf-8')] 
@@ -366,7 +385,7 @@ def foot(fr):
 Positionnez l'interrupteur sur '+', puis provisionner alors des ⊔ en utilisant les boutons '1', '10' ou '100' afin que l'agent courant puisse acheter des IGs (Bien Immatériel). Créer pour un agent (artiste) plusieurs IGs en utilisant le bouton 'New'. Les prix sont fixés aléatoirement. Pour simuler le partage de la création d'un IG, sélectionner un IG et choisir un bouton "share" d'un agent pour lui ajouter une part (l'auteur initial a 10 parts). Pour simuler une vente, sélectionner un IG créé et pressez alors un bouton d'un acheteur potentiel de cet IG. Pour simuler un mécénat, acheter par le même agent plusieurs fois le même bien. Tout artiste peut convertir ses ⊔ en argent local en positionnant l'interrupteur sur '-'. Vérifier que la somme totale en ⊔ n'a pas changé lors de l'achat d'un IG. Vérifier aussi que le revenu de l'auteur est croissant et qu'il y a remboursement des précédents acheteurs. Remarquer que pour un artiste achetant ses propres créations, son solde ne change pas, seulement le prix courant décroit.</p>"""
     else:
         o = """\n<p><p1>Help:</p1> To add an agent, type a name not already choosen, create two or three agents at least. Set switch to '+', then then provision some ⊔ using the '1','10' or '100' buttons so the current agent can buy some IGs (Intangible Good). Create for an agent (artist) several IGs using the 'New' button, prices are randomly setted and visible as tooltip. Select one created IG, then push one button of a selected buyer for that IG. To simulate sponsorship, make the same agent buy several times the same good. Any artist can convert its ⊔ to local money by switching to '-' position. Check that the total ⊔ sum does not change when buying an IG. You can check both the increasing author's income and the refunding of previous buyers. Note that for an artist buying its own IGs does not change her balance, but only decrease the current price.</p>"""
-    o += """\n<p>! This simulation is hosted on a tiny <a href="http://pi.pelinquin.fr/u?pi">RaspberryPi</a> with a low bandwidth personnal box. see <a href="cup?source">Source code</a>.
+    o += """\n<p>! This simulation is hosted on a tiny <a href="http://pi.pelinquin.fr/u?pi">RaspberryPi</a> with a low bandwidth personnal box, see <a href="cup?source">Source code</a> and <a href="cup?log">Log file</a>.
 <h6>Digest: %s<br/>
 Contact: <mail>laurent.fournier@cupfoundation.net</mail><br/>
 ⊔FOUNDATION is currently registered in Toulouse/France  SIREN: 399 661 602 00025<br/></h6>\n""" % __digest__.decode('utf-8')
@@ -487,5 +506,4 @@ sds"""
     l, aa, bb = encrypt(k.e, k.n, msg) # encrypt
     cc = decrypt(k.d, k.n, l, aa, bb)  # decrypt
     
-
 # End ⊔net!
