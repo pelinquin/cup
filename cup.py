@@ -26,23 +26,46 @@ __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding=
 
 # constants defined by government banking authorities and should be as stable as possible while should pass the test bellow!
 __cur_ratio__ = {
-    'EUR':[' €',  0.781,  0.820,  0.870], 
-    'USD':[' $',  0.998,  1.064,  1.107],
-    'CAD':[' $',  0.990,  1.062,  1.102], 
-    'GBP':[' £',  0.651,  0.664,  0.702], 
-    'JPY':[' ¥', 81.104, 87.740, 94.832], 
-    'CNY':[' Ұ',  6.405,  6.634,  6.703],
-    'BRL':['R$',  2.152,  2.234,  2.275],
+    'EUR':[' €',  0.781,  0.78996,   0.870, 'Euro'], 
+    'USD':[' $',  0.998,  1.064,     1.107, 'United State Dollar'],
+    'CAD':[' $',  0.990,  1.056495,  1.102, 'Canadian Dollar'], 
+    'GBP':[' £',  0.651,  0.672573,  0.702, 'Great Britain'], 
+    'JPY':[' ¥', 85.104, 93.4582,   96.832, 'Japan'], 
+    'CNY':[' Ұ',  6.405,  6.63024,   6.703, 'China'],
+    'BRL':['R$',  2.132,  2.158722,  2.275, 'Brasil'],
     }
+
+def utility():
+    "_"
+    u = 0
+    dtax = dbm.open('/u/tax')
+    h = eval(dtax['HASH']) 
+    h['USDUSD'] = 1
+    dtax.close()
+    base = __cur_ratio__['USD'][2]
+    for c in __cur_ratio__:
+        print (c, base*h['USD'+c])
+    for c in __cur_ratio__:
+        x = 100*abs(__cur_ratio__[c][2] - base*h['USD'+c])/__cur_ratio__[c][2]
+        u += x
+        print ('delta '+c, x)
+    print (u)
 
 def get_today_rates():
     "_"
     co, h = http.client.HTTPConnection('currencies.apps.grandtrunk.net'), {}
+    for c in __cur_ratio__:
+        if c != 'USD':
+            co.request('GET', '/getlatest/%s/USD' %c)
+            h[c+'USD'] = float(co.getresponse().read())
+    for c in __cur_ratio__:
+        if c != 'USD':
+            h['USD'+c] = 1/h[c+'USD']
     for c1 in __cur_ratio__:
          for c2 in __cur_ratio__:
-             if c1 != c2:
-                 co.request('GET', '/getlatest/%s/%s' %(c1, c2))
-                 h[c1+c2] = float(co.getresponse().read())
+             if c1 != c2 and (c1 != 'USD') and (c2 != 'USD'): 
+                 h[c1+c2] = h[c1+'USD'] * h['USD'+c2]
+    h['USDUSD'] = 1
     co.close()
     return h 
 
@@ -387,12 +410,12 @@ def application(environ, start_response):
         o += '<fh6>%d</fh6></td></tr>\n' % len(sv)
     o += '<tr><td colspan="3"><i>Total (%d)<i></td><td class="num">%5.2f ⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(ia, su, n1, n2)
     o += '</table></form>'
-    o += '<table class="main" width="50%%"><tr><th width="50" colspan="2">%s</th><th>%s</th><th width="30">&larr;%%&rarr;</th><th>%s</th><th width="30">&larr;%%&rarr;</th><th>%s</th><th>%s</th><th>%s</th></tr>' % (loc['cur'][l], loc['bra'][l], loc['nra'][l], loc['sra'][l], loc['nbc'][l], loc['tgt'][l])
+    o += '<table class="main" width="50%%"><tr><th width="50" colspan="2">%s</th><th>%s</th><th width="30">&lt;%%&gt;</th><th>%s</th><th width="30">&lt;%%&gt;</th><th>%s</th><th>%s</th><th>%s</th></tr>' % (loc['cur'][l], loc['bra'][l], loc['nra'][l], loc['sra'][l], loc['nbc'][l], loc['tgt'][l])
     for c in __cur_ratio__:
         vtax = eval (dtax[c])
         deltab = 100*(__cur_ratio__[c][2] - __cur_ratio__[c][1])/__cur_ratio__[c][2]
         deltas = 100*(__cur_ratio__[c][3] - __cur_ratio__[c][2])/__cur_ratio__[c][2]
-        o += '<tr><td width="30">%s</td><td width="10">%s</td><td class="num">%5.3f</td><td class="num">%5.2f</td><td class="num">%5.3f</td><td class="num">%5.2f</td><td class="num">%5.3f</td><td class="num">%05d</td><td class="num"><b>%7.2f %s</b></td><tr>' % (c, __cur_ratio__[c][0], __cur_ratio__[c][1], deltab, __cur_ratio__[c][2], deltas, __cur_ratio__[c][3], vtax[0], vtax[1], __cur_ratio__[c][0]) 
+        o += '<tr><td width="30">%s</td><td width="10" class="num">%s</td><td class="num">%5.3f</td><td class="num">%5.2f%%</td><td class="num">%5.3f</td><td class="num">%5.2f%%</td><td class="num">%5.3f</td><td class="num">%05d</td><td class="num"><b>%7.2f %s</b></td><tr>' % (c, __cur_ratio__[c][0], __cur_ratio__[c][1], deltab, __cur_ratio__[c][2], deltas, __cur_ratio__[c][3], vtax[0], vtax[1], __cur_ratio__[c][0]) 
     o += '</table>'
     d.close()
     dig.close()
@@ -536,5 +559,7 @@ if __name__ == '__main__':
     assert (verify(k.e, k.n, msg, s))  # verif
     l, aa, bb = encrypt(k.e, k.n, msg) # encrypt
     cc = decrypt(k.d, k.n, l, aa, bb)  # decrypt
+
+    utility()
     
 # End ⊔net!
