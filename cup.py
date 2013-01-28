@@ -37,23 +37,37 @@ __cur_ratio__ = {
 
 def utility():
     "_"
-    u = 0
     dtax = dbm.open('/u/tax')
     h = eval(dtax['HASH']) 
-    h['USDUSD'] = 1
     dtax.close()
+    h['USDUSD'] = 1
     base = __cur_ratio__['USD'][2]
+    old_ratio = {x:__cur_ratio__[x][2] for x in __cur_ratio__}
     for c in __cur_ratio__:
-        print (c, base*h['USD'+c])
+        __cur_ratio__[c][2] = base*h['USD'+c]
+    u = 0
     for c in __cur_ratio__:
-        x = 100*abs(__cur_ratio__[c][2] - base*h['USD'+c])/__cur_ratio__[c][2]
-        u += x
-        print ('delta '+c, x)
+        u += 100*abs(__cur_ratio__[c][2] - old_ratio[c])/__cur_ratio__[c][2]
     print (u)
+
+def utility2():
+    "_"
+    dtax = dbm.open('/u/tax')
+    nh = eval(dtax['HASH']) 
+    oh = eval(dtax['OLD_HASH']) 
+    rn = eval(dtax['RATE'])
+    ro = eval(dtax['OLD_RATE'])
+    dtax.close()
+    u = 0
+    for c in __cur_ratio__:
+        u += 100*abs(rn[c] - ro[c])/ro[c]
+    print (u)
+
 
 def get_today_rates():
     "_"
     co, h = http.client.HTTPConnection('currencies.apps.grandtrunk.net'), {}
+    log ('currencies.apps.grandtrunk.net')
     for c in __cur_ratio__:
         if c != 'USD':
             co.request('GET', '/getlatest/%s/USD' %c)
@@ -71,15 +85,23 @@ def get_today_rates():
 
 def test_cup_ratios():
     "_"
+    #global __cur_ratio__
     now = '%s' % datetime.datetime.now()
     o, ko = '<p title="The test checks that first that taxes are positives and second it is never valuable to exchange from one local currency to another using ⊔ as intermediate.">%s: ⊔ currencies rates test: ' % now[:10], False 
     dtax = dbm.open('/u/tax', 'w')
-    if dtax[b'TODAY'] != bytes(now[:10],'ascii'):
-        h = get_today_rates() # only once a day!
-        dtax['HASH'] = '%s' % h
-        dtax[b'TODAY'] = '%s' % now[:10]
+    if dtax[b'TODAY'] == bytes(now[:10],'ascii'):
+        h = eval(dtax[b'HASH'])
+        #__cur_ratio__ = eval(dtax[b'RATE'])
     else:
-        h = eval(dtax['HASH'])
+        if b'HASH' in dtax.keys(): 
+            dtax[b'OLD_HASH'], dtax[b'OLD_RATE'] = dtax[b'HASH'], dtax[b'RATE']    
+        h = get_today_rates() # only once a day!
+        if b'HASH' not in dtax.keys(): 
+            dtax[b'OLD_HASH'] = '%s' % h    
+            dtax[b'OLD_RATE'] = '%s' % {x:__cur_ratio__[x][2] for x in __cur_ratio__}
+        dtax[b'HASH'] = '%s' % h
+        dtax[b'RATE'] = '%s' % {x:__cur_ratio__[x][2] for x in __cur_ratio__}
+        dtax[b'TODAY'] = '%s' % now[:10]
     dtax.close()
     for r in __cur_ratio__:
         if (__cur_ratio__[r][1] > __cur_ratio__[r][2]) or (__cur_ratio__[r][2] > __cur_ratio__[r][3]):
@@ -169,9 +191,42 @@ def script():
     return """<script type="text/ecmascript">\n/*<![CDATA[*//*---->*/\n
 var sel;
 
+function ajax_get(txt,url, cb) {
+  var req = new XMLHttpRequest();
+  req.onreadystatechange = processRequest;
+  function processRequest () {
+    if (req.readyState == 4) {
+      if (req.status == 200 || req.status == 0) {
+if (cb) {
+if (txt) {
+cb(req.responseText);
+} else {
+cb(req.responseXML);
+}
+}
+      } else {
+alert('Error Get status:'+ req.status);
+      }
+    }
+  }
+  this.doGet = function() {
+    req.open('GET', url);
+    req.send(null);
+  }
+};
+
 function submited() {
   var hid = document.documentElement.scrollTop;
   //alert (hid);
+}
+
+function charge() {
+  var aj = new ajax_get(true, 'cup?log', function(res){
+     //alert ('charge');   
+     document.location.replace('cup?log');
+     //document.location.replace(content.document.location);
+  });
+  aj.doGet(); 
 }
 
 function f(evt) {
@@ -226,9 +281,29 @@ def log(s, ip=''):
 
 def app_verify(environ, start_response):
     "_"
-    o, net, dig, tax = '', dbm.open('/u/net', 'c'), dbm.open('/u/ig', 'c'), dbm.open('/u/tax', 'c')
+    A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
+    IG_PRC, IG_CUST, IG_AUTH, IG_COAU, IG_FILE = 0, 1, 2, 3, 4        
+    o, net, dig, tax = '', dbm.open('/u/net'), dbm.open('/u/ig'), dbm.open('/u/tax')
     for ig in dig.keys():
-        o += '%s %s\n' % (ig, dig[ig])
+        h = eval(dig[ig])
+        #o += 'IG %s\n' % ig
+        #o += 'Prices %s %s %s \n' % h[0]
+        #o += 'Customers %s \n' % h[1]
+        #o += 'Main Author %s \n' % h[2]
+        author = h[2]
+        #o += 'CoAuthors %s \n' % h[3]
+        #o += 'P1:%s inf:%s \n' % (h[4][0], h[4][1])
+        #o += 'signature %s \n' % h[4][2]
+        signature = h[IG_FILE][2]
+        #o += 'date %s \n' % h[4][3]
+        #o += 'encrypted content %s \n' % h[IG_FILE][4]
+        content = h[IG_FILE][4]
+        ag = eval(net[author])
+        #o += 'pub key %s\n' % ag[A_CKEY]
+        k = [b64toi(x) for x in ag[A_CKEY].split()]
+        assert (verify(k[0], k[2], content, signature))  # verif
+        cc = decrypt(k[1], k[2], content)  # decrypt
+        o += 'Content of %s: %s  \n' % (ig, cc)
     net.close()
     dig.close()
     tax.close()
@@ -256,6 +331,27 @@ def application(environ, start_response):
         start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
         return ['RESET DATABASE OK!'.encode('utf-8')]
     if query == 'verify': return app_verify(environ, start_response)
+    m = re.match(r'ig=(\w+)', query)
+    if m:
+        A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
+        IG_PRC, IG_CUST, IG_AUTH, IG_COAU, IG_FILE = 0, 1, 2, 3, 4        
+        ig = bytes(m.group(1),'ascii')
+        o = 'hello %s\n' % ig
+        net, dig = dbm.open('/u/net'), dbm.open('/u/ig')
+        if ig in dig.keys():
+            h = eval(dig[ig])
+            author = h[2]
+            signature = h[IG_FILE][2]
+            content = h[IG_FILE][4]
+            ag = eval(net[author])
+            k = [b64toi(x) for x in ag[A_CKEY].split()]
+            assert (verify(k[0], k[2], content, signature))  # verif
+            cc = decrypt(k[1], k[2], content)  # decrypt
+            o += 'Content of %s: %s  \n' % (ig, cc)
+        net.close()
+        dig.close()
+        start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
+        return [o.encode('utf-8')] 
     o = '<?xml version="1.0" encoding="utf-8"?>\n<html>\n' 
     o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
     o += '<link href="http://fonts.googleapis.com/css?family=Schoolbell" rel="stylesheet" type="text/css">\n' 
@@ -273,11 +369,11 @@ def application(environ, start_response):
     d, dig, dtax = dbm.open('/u/net', 'c'), dbm.open('/u/ig', 'c'), dbm.open('/u/tax', 'c')
     raw, cb, fr, newcook = None, None, None, []
     A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
-    IG_PRC, IG_CUST, IG_COAU, IG_FILE = 0, 1, 2, 3        
+    IG_PRC, IG_CUST, IG_AUTH, IG_COAU, IG_FILE = 0, 1, 2, 3, 4        
     #'Agent1' [23.43, {'ig1': 0.01},      {'ig2': 2},            '2013-01-11 16:21:19', 'JPY',   -2658.96,      14, KEY]
     # Name    Ballance  {author hash: %}, {custom hash: nb},     date,                 currency, local balance, Age RSA key] 
-    #'ig1'    [(6.57, 6.57, 0),        ['agent2',],   {'Agent1': 10, 'Agent2': 1}, (6.57, 11700, 'signature1', 'the date1', 'encrypted content')]
-    # IG id   [(price, delta, refund), [custom list], {co-author: parts},             (p1,   pf,     signature,    date,       encrypt_content
+    #'ig1'    [(6.57, 6.57, 0),        ['agent2',],  'Agent1',    {'Agent1':10, 'Agent2':1}, (6.57, 11700, 'signature1', 'the date1', 'encrypted content')]
+    # IG id   [(price, delta, refund), [custom list], MainAuthor, {co-author: parts},        (p1,   pf,     signature,    date,       encrypt_content
     if environ['REQUEST_METHOD'].lower() == 'post':
         raw = environ['wsgi.input'].read().decode('utf-8')
         fr1 = None 
@@ -289,7 +385,7 @@ def application(environ, start_response):
             fr1, a, age, cur, cb = m.group(1), m.group(2), int(m.group(3)), m.group(4), m.group(4)
             if bytes(a, 'utf-8') not in agents:
                 now = '%s' % datetime.datetime.now()
-                k = RSA.generate(2048, os.urandom) 
+                k = RSA.generate(1024, os.urandom) 
                 ckey = bytes(' '.join([itob64(x).decode('ascii') for x in (k.e, k.d, k.n)]), 'ascii')
                 d[a] = '%s' % [0, {}, {}, now[:-7], cur, 0, age, ckey]
                 vtax = eval (dtax[cur])
@@ -320,10 +416,11 @@ def application(environ, start_response):
             v[A_AUTH][g] = 100
             d[s] = '%s' % v 
             k = [b64toi(x) for x in v[A_CKEY].split()]
-            l, cont1, cont2 = encrypt(k[0], k[2], c)
-            content = '%d %s %s' % (l,cont1,cont2)
+            content = encrypt(k[0], k[2], c)
             signature = sign(k[1], k[2], content)
-            dig[g] = '%s' % [(p,p,0), [], {s:10}, (p, f, signature, 'the date1', content)] # 10 parts for initial author
+            assert(verify(k[0], k[2], content, signature))
+            cc2 = decrypt(k[1], k[2], content)        # check decrypt
+            dig[g] = '%s' % [(p,p,0), [], s, {s:10}, (p, f, signature, 'the date1', content)] # 10 parts for initial author
         m = re.match(r'(fr=on&|)adda=&age=&cur=&(cb=on&|)share=([^\+]+)\+([\w\-]{4})$',raw) # share
         if m:
             fr1, cb, s, g = m.group(1), m.group(2), m.group(3), m.group(4)  
@@ -389,8 +486,6 @@ def application(environ, start_response):
         o += '<td title="years old">%d</td>' % v[A_AAGE]
         o += '<td class="num" title="%s is registered with %s currency">%5.2f%s<br/>%s</td>' % (name, v[A_CURR], v[A_LBAL], __cur_ratio__[v[A_CURR]][0], v[A_CURR])
         o += '<td class="num">%5.2f ⊔<br/><input name="%s" type="submit" title="provision 1⊔ to/from the account" value="1"/><input name="%s" type="submit" title="provision 10⊔ to/from the account" value="10"/><input name="%s" type="submit" title="provision 100⊔ to/from the account" value="100"/></td><td onclick="f(event);"><input name="@%s" type="submit" value="%s"/><button name="share" type="submit" value="%s" disabled="yes">%s</button><br/>' % (v[A_UBAL], name, name, name,  name, loc['new'][l], name, loc['sha'][l])  
-        #A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
-        #IG_PRC, IG_CUST, IG_COAU, IG_FILE = 0, 1, 2, 3
         sv = sorted(v[A_AUTH].keys())
         for g in sv:
             n1 += 1
@@ -406,11 +501,11 @@ def application(environ, start_response):
             lis = ''
             for a in vig[IG_COAU]:
                 lis += '%s:%s ' % (a, vig[IG_COAU][a])
-            o += ' <a><table class="ig" title=""><tr><td class="ig">%s<p2 class="small">(%d)</p2></td></tr><tr><td class="small">%s</td></tr></table></a>' % (g, v[A_CUST][g], lis) 
+            o += ' <a><table onclick="charge();" class="ig" title=""><tr><td class="ig">%s<p2 class="small">(%d)</p2></td></tr><tr><td class="small">%s</td></tr></table></a>' % (g, v[A_CUST][g], lis) 
         o += '<fh6>%d</fh6></td></tr>\n' % len(sv)
     o += '<tr><td colspan="3"><i>Total (%d)<i></td><td class="num">%5.2f ⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(ia, su, n1, n2)
     o += '</table></form>'
-    o += '<table class="main" width="50%%"><tr><th width="50" colspan="2">%s</th><th>%s</th><th width="30">&lt;%%&gt;</th><th>%s</th><th width="30">&lt;%%&gt;</th><th>%s</th><th>%s</th><th>%s</th></tr>' % (loc['cur'][l], loc['bra'][l], loc['nra'][l], loc['sra'][l], loc['nbc'][l], loc['tgt'][l])
+    o += '<table class="main" width="50%%"><tr><th width="50" colspan="2">%s</th><th>%s</th><th width="30">&lt;-%%-&gt;</th><th>%s</th><th width="30">&lt;-%%-&gt;</th><th>%s</th><th>%s</th><th>%s</th></tr>' % (loc['cur'][l], loc['bra'][l], loc['nra'][l], loc['sra'][l], loc['nbc'][l], loc['tgt'][l])
     for c in __cur_ratio__:
         vtax = eval (dtax[c])
         deltab = 100*(__cur_ratio__[c][2] - __cur_ratio__[c][1])/__cur_ratio__[c][2]
@@ -422,7 +517,7 @@ def application(environ, start_response):
     dtax.close()
     #if raw: o += "<pre>%s</pre>" % raw
     #o += "<pre>%s</pre>" % query
-    o += test_cup_ratios() 
+    #o += test_cup_ratios() 
     o += foot(fr) + '</html>'
     start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))] + newcook)
     return [o.encode('utf-8')] 
@@ -513,11 +608,18 @@ def encrypt(e, n, msg):
     skey = os.urandom(16)
     iskey = int(binascii.hexlify(skey),16)
     aes = AES.new(skey, AES.MODE_ECB)
-    return len(msg), itob64(pow(iskey, e, n)), aes.encrypt(msg+b'\0'*(16-len(msg)%16))
+    c, r = itob64(pow(iskey, e, n)), len(msg)
+    raw = bytes(((r)&0xff, (r>>8)&0xff, (r>>16)&0xff, (r>>24)&0xff, (len(c))&0xff))
+    return raw + c + aes.encrypt(msg+b'\0'*(16-len(msg)%16))
 
-def decrypt(d, n, lmsg, ckey, cmsg):
+def decrypt(d, n, raw):
+    lmsg, l2 = raw[0]+(raw[1]<<8)+(raw[2]<<16)+(raw[3]<<24), raw[4]
+    print (lmsg,l2)
+    ckey, cmsg = raw[5:l2+5], raw[l2+5:]
     c = hex(pow(b64toi(ckey), d, n))[2:]
     if len(c)%2: c = '0'+c
+    #open('/u/zorro', 'a', encoding='utf-8').write('%s %d\n' % (c,len(c)))
+    #print('%s %d\n' % (c,len(c)))
     aes2 = AES.new(bytes.fromhex(c), AES.MODE_ECB)
     return aes2.decrypt(cmsg)[:lmsg]
 
@@ -553,13 +655,16 @@ if __name__ == '__main__':
             d.close()
 
     # TEST SIMPLE CRYPTO
-    k = RSA.generate(1024, os.urandom)
-    msg = b"""this is a long message kdhsdkhjksdhkdshdsjkdskhksdjksdhdsfdffddfdfdf COUCOU dssdsdlkjdskljsdsds"""
-    s = sign(k.d, k.n, msg)            # sign
-    assert (verify(k.e, k.n, msg, s))  # verif
-    l, aa, bb = encrypt(k.e, k.n, msg) # encrypt
-    cc = decrypt(k.d, k.n, l, aa, bb)  # decrypt
+    for x in range(100):
+        k = RSA.generate(1024, os.urandom)
+        msg = b"""this is a long message kdhsdkhjksdhkdshdGJGHGJHGJGJHGJGJhksdjksdhdsfdffddfdfdf COUCOU dssdsdlkjdskljsdsds"""
+        msg = b'This is a long content!'
+        s = sign(k.d, k.n, msg)           # sign
+        assert (verify(k.e, k.n, msg, s)) # verif
+        aa = encrypt(k.e, k.n, msg)       # encrypt
+        cc = decrypt(k.d, k.n, aa)        # decrypt
+        print (cc)
 
-    utility()
-    
+    #utility()
+
 # End ⊔net!
