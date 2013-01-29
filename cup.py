@@ -220,10 +220,11 @@ function submited() {
   //alert (hid);
 }
 
-function charge() {
+function charge(evt) {
   var aj = new ajax_get(true, 'cup?log', function(res){
-     //alert ('charge');   
-     document.location.replace('cup?log');
+     var ig = evt.target.parentNode.parentNode.parentNode.id.substring(1);   
+     //document.location.replace('cup?ig='+ig);
+     window.open('cup?ig='+ig);
      //document.location.replace(content.document.location);
   });
   aj.doGet(); 
@@ -310,6 +311,25 @@ def app_verify(environ, start_response):
     start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
     return [o.encode('utf-8')]
 
+def app_read(ig, environ, start_response):
+    "_"
+    A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
+    IG_PRC, IG_CUST, IG_AUTH, IG_COAU, IG_FILE = 0, 1, 2, 3, 4        
+    net, dig = dbm.open('/u/net'), dbm.open('/u/ig')
+    if ig in dig.keys():
+        h = eval(dig[ig])
+        author = h[2]
+        signature = h[IG_FILE][2]
+        content = h[IG_FILE][4]
+        ag = eval(net[author])
+        k = [b64toi(x) for x in ag[A_CKEY].split()]
+        assert (verify(k[0], k[2], content, signature))  # verif
+        cc = decrypt(k[1], k[2], content)  # decrypt
+    net.close()
+    dig.close()
+    start_response('200 OK', [('Content-type', 'application/pdf')])
+    return [cc] 
+
 def application(environ, start_response):
     """ WSGI Web application """
     query, mime, o, fname = urllib.parse.unquote(environ['QUERY_STRING']), 'text/html; charset=utf-8', 'Error!', 'toto'
@@ -332,26 +352,7 @@ def application(environ, start_response):
         return ['RESET DATABASE OK!'.encode('utf-8')]
     if query == 'verify': return app_verify(environ, start_response)
     m = re.match(r'ig=(\w+)', query)
-    if m:
-        A_UBAL, A_AUTH, A_CUST, A_DATE, A_CURR, A_LBAL, A_AAGE, A_CKEY = 0, 1, 2, 3, 4, 5, 6, 7
-        IG_PRC, IG_CUST, IG_AUTH, IG_COAU, IG_FILE = 0, 1, 2, 3, 4        
-        ig = bytes(m.group(1),'ascii')
-        o = 'hello %s\n' % ig
-        net, dig = dbm.open('/u/net'), dbm.open('/u/ig')
-        if ig in dig.keys():
-            h = eval(dig[ig])
-            author = h[2]
-            signature = h[IG_FILE][2]
-            content = h[IG_FILE][4]
-            ag = eval(net[author])
-            k = [b64toi(x) for x in ag[A_CKEY].split()]
-            assert (verify(k[0], k[2], content, signature))  # verif
-            cc = decrypt(k[1], k[2], content)  # decrypt
-            o += 'Content of %s: %s  \n' % (ig, cc)
-        net.close()
-        dig.close()
-        start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
-        return [o.encode('utf-8')] 
+    if m: return app_read(bytes(m.group(1), 'ascii'), environ, start_response)
     o = '<?xml version="1.0" encoding="utf-8"?>\n<html>\n' 
     o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
     o += '<link href="http://fonts.googleapis.com/css?family=Schoolbell" rel="stylesheet" type="text/css">\n' 
@@ -411,7 +412,8 @@ def application(environ, start_response):
             fr1, cb, s = m.group(1), m.group(2), m.group(3)
             now = '%s' % datetime.datetime.now()
             g = hashf(now.encode('utf-8'))
-            p, f, c = random.randint(1,1000)/100, random.randint(1,500)*100, bytes('This is an test content for %s' % (g), 'utf-8')
+            p, f = random.randint(1,1000)/100, random.randint(1,500)*100
+            c = gen_pdf_doc(g)
             v = eval(d[s])
             v[A_AUTH][g] = 100
             d[s] = '%s' % v 
@@ -501,7 +503,7 @@ def application(environ, start_response):
             lis = ''
             for a in vig[IG_COAU]:
                 lis += '%s:%s ' % (a, vig[IG_COAU][a])
-            o += ' <a><table onclick="charge();" class="ig" title=""><tr><td class="ig">%s<p2 class="small">(%d)</p2></td></tr><tr><td class="small">%s</td></tr></table></a>' % (g, v[A_CUST][g], lis) 
+            o += ' <a><table id="+%s" onclick="charge(event);" class="ig" title=""><tr><td class="ig">%s<p2 class="small">(%d)</p2></td></tr><tr><td class="small">%s</td></tr></table></a>' % (g, g, v[A_CUST][g], lis) 
         o += '<fh6>%d</fh6></td></tr>\n' % len(sv)
     o += '<tr><td colspan="3"><i>Total (%d)<i></td><td class="num">%5.2f ⊔</td><td>%d IGs</td><td>%d IGs</td></tr>' %(ia, su, n1, n2)
     o += '</table></form>'
@@ -517,7 +519,7 @@ def application(environ, start_response):
     dtax.close()
     #if raw: o += "<pre>%s</pre>" % raw
     #o += "<pre>%s</pre>" % query
-    #o += test_cup_ratios() 
+    o += test_cup_ratios() 
     o += foot(fr) + '</html>'
     start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))] + newcook)
     return [o.encode('utf-8')] 
@@ -540,6 +542,31 @@ Positionnez l'interrupteur sur '+', puis provisionner alors des ⊔ en utilisant
 Contact: <mail>laurent.fournier@cupfoundation.net</mail><br/>
 ⊔FOUNDATION is currently registered in Toulouse/France  SIREN: 399 661 602 00025<br/></h6>\n""" % __digest__.decode('utf-8')
     return o
+
+def gen_pdf_doc(ig='sample'):
+    r"""\documentclass{beamer}
+\usepackage{tikz}
+\usepackage{wasysym}
+\usepackage[utf8]{inputenc}
+\usepackage{marvosym}
+\usepackage{beamerthemeshadow}
+\usepackage{graphicx}
+\title[\texttt{WLgLr}]{This is the title for %s}
+\subtitle{$\sqcup \underline{net}$ }
+\author{Laurent Fournier\inst{*}}\institute{*laurent.fournier@cupfoundation.net}
+\begin{document}
+\usetikzlibrary{shapes,fit,arrows,shadows,backgrounds,svg.path}
+\begin{frame}[fragile]
+\titlepage
+\begin{tikzpicture}[remember picture,overlay,shift={(current page.north west)}] 
+\draw[draw=none,fill=blue,scale=1,shift={(.6,-1)}] svg "M0,0L0,18L4,18L4,4L14,4L14,18L18,18L18,0Z";
+\end{tikzpicture}
+\end{frame}
+\end{document}"""
+    o = gen_pdf_doc.__doc__ % ig
+    open('/tmp/%s.tex' % ig, 'w').write(o)
+    subprocess.call(('pdflatex','-interaction=batchmode', '-output-directory', '/tmp', '%s.tex' % ig, '1>/dev/null'))
+    return open('/tmp/%s.pdf' % ig, 'rb').read()
 
 class cup:
     xi = .25
