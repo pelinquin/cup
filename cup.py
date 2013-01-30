@@ -63,7 +63,6 @@ def utility2():
         u += 100*abs(rn[c] - ro[c])/ro[c]
     print (u)
 
-
 def get_today_rates():
     "_"
     co, h = http.client.HTTPConnection('currencies.apps.grandtrunk.net'), {}
@@ -493,7 +492,7 @@ def application(environ, start_response):
             n1 += 1
             vig = eval(dig[g])
             per, pc, pf, np = v[A_AUTH][g], vig[IG_PRC][0], vig[IG_FILE][1], vig[IG_COAU][name]
-            o += ' <a><table class="ig" title="%5.2f %% (%s parts)"><tr><td id="%s" class="ig">%s</td></tr><tr><td class="small">%5.2f⊔%2.0f</td></tr></table></a>' % (per, np, g, g, pc, pf) 
+            o += ' <a><table id="*%s" ondblclick="charge(event);" class="ig" title="%5.2f %% (%s parts)"><tr><td id="%s" class="ig">%s</td></tr><tr><td class="small">%5.2f⊔%2.0f</td></tr></table></a>' % (g, per, np, g, g, pc, pf) 
         o += '<fh6>%d</fh6></td>' % len(sv)
         o += '<td><button name="buy" type="submit" value="%s" disabled="yes"/>%s</button><br/>' % (name, loc['buy'][l])
         sv = sorted(v[A_CUST].keys())
@@ -641,12 +640,9 @@ def encrypt(e, n, msg):
 
 def decrypt(d, n, raw):
     lmsg, l2 = raw[0]+(raw[1]<<8)+(raw[2]<<16)+(raw[3]<<24), raw[4]
-    print (lmsg,l2)
     ckey, cmsg = raw[5:l2+5], raw[l2+5:]
     c = hex(pow(b64toi(ckey), d, n))[2:]
     if len(c)%2: c = '0'+c
-    #open('/u/zorro', 'a', encoding='utf-8').write('%s %d\n' % (c,len(c)))
-    #print('%s %d\n' % (c,len(c)))
     aes2 = AES.new(bytes.fromhex(c), AES.MODE_ECB)
     return aes2.decrypt(cmsg)[:lmsg]
 
@@ -684,7 +680,6 @@ if __name__ == '__main__':
     # TEST SIMPLE CRYPTO
     for x in range(100):
         k = RSA.generate(1024, os.urandom)
-        msg = b"""this is a long message kdhsdkhjksdhkdshdGJGHGJHGJGJHGJGJhksdjksdhdsfdffddfdfdf COUCOU dssdsdlkjdskljsdsds"""
         msg = b'This is a long content!'
         s = sign(k.d, k.n, msg)           # sign
         assert (verify(k.e, k.n, msg, s)) # verif
