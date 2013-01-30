@@ -65,6 +65,15 @@ def application(environ, start_response):
                 o = 'PUBLIC KEY ALREADY SET!' 
             elif (len(t) == 2) and (type(t[0]).__name__ == 'str') and (type(t[1]).__name__ == 'str') and len(raw) < MAX_ARG_SIZE:
                 d[name], o = t[1], 'PUBKEY OK'
+        elif reg(re.match(r'^BAL(\(\s*"([^\"]{3,30})".*)$', raw, re.U)): 
+            t, name = eval(reg.v.group(1)), b'BAL_' + bytes(reg.v.group(2), 'utf8')
+            if name in d.keys():
+                today = '%s' % datetime.datetime.now()
+                pk = bytes('PUB_%s' % t[0], 'utf-8')
+                if verify(RSA_E, b64toi(d[pk]), today[:10], t[1]):
+                    o = '%s: %s⊔' % (today, d[name].decode('utf-8'))
+                else:
+                    o = 'bad signature!'
         elif reg(re.match(r'^UPDATE$', raw)):
             o = 'provision update from Github'
         elif reg(re.match(r'^TEST', raw)): # unicode
@@ -89,7 +98,7 @@ def application(environ, start_response):
             o += 'DIGESTS now, database creation :%s %s\n' % (d['__DIGEST__'], __digest__)
             d.close()
         elif arg.lower() in ('log', 'transaction'):
-            d, o = dbm.open('/u/bank'), ''
+            d, o = dbm.open('/u/bank',), ''
             for x in d.keys():
                 if reg(re.match('(\d{4}.*)$', x.decode('utf-8'))):
                     o += '%s\n' % reg.v.group(1)
@@ -97,8 +106,8 @@ def application(environ, start_response):
         else:
             o = 'Welcome to ⊔net!\n\nHTTP POST request:\n'
             o += '\tPK(agent, public_key)\n'
-            o += '\tTR(seller, buyer, price, signature)\n'
-            o += '\tUPDATE\n'
+            o += '\tTR(buyer, seller, price, current_date, buyer_signature) with signed message = \'seller|price|\' returns status (OK,KO)\n'
+            o += '\tBAL(owner, owner_signature) with signed message = \'date_of_the_day\' returns ballance\n'
             o += 'HTTP GET request:\n\tstat\n\tsource\n\tlog\n'
     start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
     return [o.encode('utf-8')] 
@@ -187,10 +196,17 @@ if __name__ == '__main__':
     co.request('POST', '/bank', 'TR("%s", "%s", %s, %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(slr), prc, td, s))
     print(co.getresponse().read().decode('utf-8'))
 
+    owner, td = 'Valérie', '%s' % datetime.datetime.now()
+    k = [b64toi(x) for x in ds[owner].split()]
+    s = sign(k[1], k[2], td[:10])
+    co.request('POST', '/bank', 'BAL("%s", %s)' % (urllib.parse.quote(owner), s))
+    print(co.getresponse().read().decode('utf-8'))
+
+
     ds.close()
 
-    co.request('GET', '/bank?stat')
-    print(co.getresponse().read())
+    #co.request('GET', '/bank?stat')
+    #print(co.getresponse().read())
     
     sys.exit()
 
