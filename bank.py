@@ -35,14 +35,14 @@ def reg(value):
 
 def application(environ, start_response):
     "wsgi server app"
+    if not os.path.isfile('/u/bank.db'):
+        d = dbm.open('/u/bank', 'c')
+        d['__DIGEST__'], d['NB_TR'] = __digest__, '0'
+        d.close()
     if environ['REQUEST_METHOD'].lower() == 'post':
         raw, o = urllib.parse.unquote(environ['wsgi.input'].read().decode('utf-8')), 'error!'
         o = 'error! %s' % raw[:15]
-        if not os.path.isfile('/u/serv.db'):
-            d = dbm.open('/u/serv', 'c')
-            d['__DIGEST__'], d['NB_TR'] = __digest__, '0'
-            d.close()
-        d = dbm.open('/u/serv', 'c')
+        d = dbm.open('/u/bank', 'c')
         if reg(re.match(r'^TR(\(\s*"([^"]{3,30})"\s*,\s*"([^"]{3,30})".*)$', raw, re.U)): 
             t, byr, slr = eval(reg.v.group(1)), b'BAL_' + bytes(reg.v.group(2), 'utf-8') , b'BAL_' + bytes(reg.v.group(3), 'utf-8')
             if (len(t) == 5) and (type(t[2]).__name__ in  ('float', 'int')) and (type(t[0]).__name__ == 'str') and (type(t[1]).__name__ == 'str'):
@@ -75,7 +75,7 @@ def application(environ, start_response):
         if arg.lower() in ('source', 'src', 'download'):
             o = open(__file__, 'r', encoding='utf-8').read()
         elif arg.lower() in ('stat', 'statistics'):
-            d = dbm.open('/u/serv',)
+            d = dbm.open('/u/bank',)
             nb, su, ck = 0, 0, 0
             for x in d.keys():
                 if reg(re.match('BAL_(.*)$', x.decode('utf-8'))):
@@ -89,7 +89,7 @@ def application(environ, start_response):
             o += 'DIGESTS now, database creation :%s %s\n' % (d['__DIGEST__'], __digest__)
             d.close()
         elif arg.lower() in ('log', 'transaction'):
-            d, o = dbm.open('/u/serv',), ''
+            d, o = dbm.open('/u/bank'), ''
             for x in d.keys():
                 if reg(re.match('(\d{4}.*)$', x.decode('utf-8'))):
                     o += '%s\n' % reg.v.group(1)
@@ -160,7 +160,7 @@ if __name__ == '__main__':
     ds = dbm.open('/u/sk')
     for a in popu:
         k = [b64toi(x) for x in ds[a].split()]
-        co.request('POST', '/serv', 'PK("%s", "%s")' % (urllib.parse.quote(a), itob64(k[2]).decode('ascii')))
+        co.request('POST', '/bank', 'PK("%s", "%s")' % (urllib.parse.quote(a), itob64(k[2]).decode('ascii')))
         print(co.getresponse().read().decode('utf-8'))
     ds.close()
 
@@ -169,27 +169,27 @@ if __name__ == '__main__':
     byr, slr, prc, td = 'Alice', 'Bob', 1.65, bytes('%s' % datetime.datetime.now(), 'ascii')
     k = [b64toi(x) for x in ds[byr].split()]
     s = sign(k[1], k[2], '%s|%s|%s|%s' %(byr, slr, prc, td))
-    co.request('POST', '/serv', 'TR("%s", "%s", %s, %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(slr), prc, td, s))
+    co.request('POST', '/bank', 'TR("%s", "%s", %s, %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(slr), prc, td, s))
     print(co.getresponse().read().decode('utf-8'))
 
     byr, slr, prc, td = 'Valérie', 'Carl⊔', 1.65, bytes('%s' % datetime.datetime.now(), 'ascii')
     k = [b64toi(x) for x in ds[byr].split()]
     s = sign(k[1], k[2], '%s|%s|%s|%s' %(byr, slr, prc, td))
-    co.request('POST', '/serv', 'TR("%s", "%s", %s, %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(slr), prc, td, s))
+    co.request('POST', '/bank', 'TR("%s", "%s", %s, %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(slr), prc, td, s))
     print(co.getresponse().read().decode('utf-8'))
 
     byr, slr, prc, td = 'Bob', 'Daniel', 1.65, bytes('%s' % datetime.datetime.now(), 'ascii')
     k = [b64toi(x) for x in ds[byr].split()]
     s = sign(k[1], k[2], '%s|%s|%s|%s' %(byr, slr, prc, td))
-    co.request('POST', '/serv', 'TR("%s", "%s", %s, %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(slr), prc, td, s))
+    co.request('POST', '/bank', 'TR("%s", "%s", %s, %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(slr), prc, td, s))
     print(co.getresponse().read().decode('utf-8'))
     s = sign(k[1], k[2], '%s|%s|%s|%s' %(byr, slr, prc, td))
-    co.request('POST', '/serv', 'TR("%s", "%s", %s, %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(slr), prc, td, s))
+    co.request('POST', '/bank', 'TR("%s", "%s", %s, %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(slr), prc, td, s))
     print(co.getresponse().read().decode('utf-8'))
 
     ds.close()
 
-    co.request('GET', '/serv?stat')
+    co.request('GET', '/bank?stat')
     print(co.getresponse().read())
     
     sys.exit()
