@@ -35,14 +35,17 @@ def reg(value):
 
 def application(environ, start_response):
     "wsgi server app"
+    mime = 'text/plain; charset=utf-8'
     if not os.path.isfile('/u/bank.db'):
         d = dbm.open('/u/bank', 'c')
         d['__DIGEST__'], d['NB_TR'] = __digest__, '0'
         d.close()
     if environ['REQUEST_METHOD'].lower() == 'post':
+        today = '%s' % datetime.datetime.now()
         raw, o = urllib.parse.unquote(environ['wsgi.input'].read().decode('utf-8')), 'error!'
         o = 'error! %s' % raw[:15]
         d = dbm.open('/u/bank', 'c')
+        # TRANSACTION
         if reg(re.match(r'^TR(\(\s*"([^"]{3,30})"\s*,\s*"([^"]{3,30})".*)$', raw, re.U)): 
             t, byr, slr = eval(reg.v.group(1)), b'BAL_' + bytes(reg.v.group(2), 'utf-8') , b'BAL_' + bytes(reg.v.group(3), 'utf-8')
             if (len(t) == 5) and (type(t[2]).__name__ in  ('float', 'int')) and (type(t[0]).__name__ == 'str') and (type(t[1]).__name__ == 'str'):
@@ -59,25 +62,27 @@ def application(environ, start_response):
                         o = 'Duplicate transaction!'
                 else:
                     o = 'Unknown public key!'
+        # USER REGISTRATION
         elif reg(re.match(r'^PK(\(\s*"([^\"]{3,30})".*)$', raw, re.U)): 
             t, name = eval(reg.v.group(1)), b'PUB_' + bytes(reg.v.group(2), 'utf8')
             if name in d.keys():
-                o = 'PUBLIC KEY ALREADY SET!' 
+                o = 'Public key already set!' 
             elif (len(t) == 2) and (type(t[0]).__name__ == 'str') and (type(t[1]).__name__ == 'str') and len(raw) < MAX_ARG_SIZE:
-                d[name], o = t[1], 'PUBKEY OK'
+                d[name], d['BAL_'+name], o = t[1], '0', 'PUBKEY OK'
+        # READ BALLANCE
         elif reg(re.match(r'^BAL(\(\s*"([^\"]{3,30})".*)$', raw, re.U)): 
             t, name = eval(reg.v.group(1)), b'BAL_' + bytes(reg.v.group(2), 'utf8')
+            assert (t[0] == reg.v.group(2))
             if name in d.keys():
-                today = '%s' % datetime.datetime.now()
                 pk = bytes('PUB_%s' % t[0], 'utf-8')
                 if verify(RSA_E, b64toi(d[pk]), today[:10], t[1]):
                     o = '%s: %s⊔' % (today, d[name].decode('utf-8'))
                 else:
-                    o = 'bad signature!'
+                    o = 'Bad signature!'
         elif reg(re.match(r'^UPDATE$', raw)):
             o = 'provision update from Github'
-        elif reg(re.match(r'^TEST', raw)): # unicode
-            o = 'test! %s' % raw
+        else:
+            o = 'Test! %s' % raw
         d.close()
     else:
         arg = urllib.parse.unquote(environ['QUERY_STRING'])
@@ -89,10 +94,10 @@ def application(environ, start_response):
             for x in d.keys():
                 if reg(re.match('BAL_(.*)$', x.decode('utf-8'))):
                     nb += 1
-                    su += abs(float(d[x]))
+                    su += abs(float(d[x])/2)
                     ck += float(d[x])
             o =  'Number of login: %d\n' % nb
-            o += 'Total transactions: %f\n' % (su/2)
+            o += 'Total transactions: %f\n' % su
             o += 'Check integrity (should be zero): %f\n' % ck
             o += 'Number of transactions: %d\n' % int(d['NB_TR'])
             o += 'DIGESTS now, database creation :%s %s\n' % (d['__DIGEST__'], __digest__)
@@ -103,13 +108,38 @@ def application(environ, start_response):
                 if reg(re.match('(\d{4}.*)$', x.decode('utf-8'))):
                     o += '%s\n' % reg.v.group(1)
             d.close()
-        else:
+        elif arg.lower() in ('about', 'help'):
             o = 'Welcome to ⊔net!\n\nHTTP POST request:\n'
             o += '\tPK(agent, public_key)\n'
             o += '\tTR(buyer, seller, price, current_date, buyer_signature) with signed message = \'seller|price|\' returns status (OK,KO)\n'
             o += '\tBAL(owner, owner_signature) with signed message = \'date_of_the_day\' returns ballance\n'
             o += 'HTTP GET request:\n\tstat\n\tsource\n\tlog\n'
-    start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
+        else:
+            o = '<?xml version="1.0" encoding="utf-8"?>\n' 
+            o += '<svg xmlns="http://www.w3.org/2000/svg">\n'
+            o += '<style type="text/css">text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{fill:gray;}text.note{font-family:cursive;fill:#CCC;font-size:8pt;}</style>\n'
+            o += '<path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/>'
+            d = dbm.open('/u/bank',)
+            nb, su, ck = 0, 0, 0
+            for x in d.keys():
+                if reg(re.match('BAL_(.*)$', x.decode('utf-8'))):
+                    nb += 1
+                    su += abs(float(d[x])/2)
+                    ck += float(d[x])
+            today = '%s' % datetime.datetime.now()
+            o += '<text x="90" y="70" font-size="48" title="banking for intangible goods">Bank</text>\n'
+            o += '<text class="note" x="75"  y="22" title="still in security test!">Alpha</text>\n'
+            o += '<text class="foot" x="20"  y="100">%s</text>\n' % today[:19]
+            o += '<text class="foot" x="20"  y="200">%d users</text>\n' % nb
+            o += '<text class="foot" x="120" y="200">%d transactions</text>\n' % int(d['NB_TR'])
+            o += '<text class="foot" x="300" y="200">volume: %f ⊔</text>\n' % su
+            o += '<text class="foot" x="400" y="200">status: %s</text>\n' % 'ok' if ck else 'error'
+            o += '<text class="foot" x="500" y="200">digest: %s|%s</text>\n' % (d['__DIGEST__'].decode('utf-8'), __digest__.decode('utf-8'))
+            o += '<text class="foot" x="20"  y="240" title="or visit \'www.cupfoundation.net\'">Contact: laurent.fournier@cupfoundation.net</text>\n' 
+            d.close()
+            o += '</svg>\n'
+            mime = 'application/xhtml+xml; charset=utf-8'
+    start_response('200 OK', [('Content-type', mime)])
     return [o.encode('utf-8')] 
 
 def itob64(n):
@@ -155,6 +185,16 @@ def decrypt(d, n, raw):
     aes2 = AES.new(bytes.fromhex(c), AES.MODE_ECB)
     return aes2.decrypt(cmsg)[:lmsg]
 
+def transaction(byr, slr, prc):
+    ds = dbm.open('/u/sk')    
+    td = bytes('%s' % datetime.datetime.now(), 'ascii')
+    k = [b64toi(x) for x in ds[byr].split()]
+    s = sign(k[1], k[2], '%s|%s|%s|%s' %(byr, slr, prc, td))
+    co.request('POST', '/bank', 'TR("%s", "%s", %s, %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(slr), prc, td, s))
+    ds.close()
+    return co.getresponse().read().decode('utf-8')
+    
+
 if __name__ == '__main__':
     popu = ('Alice', 'Valérie', 'Bob', 'Carl⊔', 'Daniel', 'Elise')
     co = http.client.HTTPConnection('localhost')
@@ -173,20 +213,11 @@ if __name__ == '__main__':
         print(co.getresponse().read().decode('utf-8'))
     ds.close()
 
+    print (transaction('Alice', 'Bob', 1.65))
+    print (transaction('Valérie', 'Carl⊔', 4.65))
+    print (transaction('Bob', 'Daniel', 4.65))
+
     ds = dbm.open('/u/sk')    
-
-    byr, slr, prc, td = 'Alice', 'Bob', 1.65, bytes('%s' % datetime.datetime.now(), 'ascii')
-    k = [b64toi(x) for x in ds[byr].split()]
-    s = sign(k[1], k[2], '%s|%s|%s|%s' %(byr, slr, prc, td))
-    co.request('POST', '/bank', 'TR("%s", "%s", %s, %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(slr), prc, td, s))
-    print(co.getresponse().read().decode('utf-8'))
-
-    byr, slr, prc, td = 'Valérie', 'Carl⊔', 1.65, bytes('%s' % datetime.datetime.now(), 'ascii')
-    k = [b64toi(x) for x in ds[byr].split()]
-    s = sign(k[1], k[2], '%s|%s|%s|%s' %(byr, slr, prc, td))
-    co.request('POST', '/bank', 'TR("%s", "%s", %s, %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(slr), prc, td, s))
-    print(co.getresponse().read().decode('utf-8'))
-
     byr, slr, prc, td = 'Bob', 'Daniel', 1.65, bytes('%s' % datetime.datetime.now(), 'ascii')
     k = [b64toi(x) for x in ds[byr].split()]
     s = sign(k[1], k[2], '%s|%s|%s|%s' %(byr, slr, prc, td))
