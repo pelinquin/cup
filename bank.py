@@ -138,13 +138,14 @@ def application(environ, start_response):
             o += 'Total transactions: %f\n' % su
             o += 'Check integrity (should be zero): %f\n' % ck
             o += 'Number of transactions: %d\n' % int(d['NB_TR'])
-            o += 'DIGESTS now, database creation :%s %s\n' % (d['__DIGEST__'], __digest__)
+            o += 'Digest :%s-%s\n' % (d['__DIGEST__'].decode('utf-8'), __digest__.decode('ascii'))
             d.close()
         elif arg.lower() in ('log', 'transaction'):
             d, o, a = dbm.open('/u/bank',), '', []
             for x in d.keys():
                 if reg(re.match('(\d{4}.*)$', x.decode('utf-8'))):
-                    a.append('%s %s...\n' % (reg.v.group(1), d[x].decode('utf-8')))
+                    dat = d[x].split()
+                    a.append('%s %s...\n' % (reg.v.group(1), dat[3].decode('utf-8')))
             b = sorted(a, reverse=True)
             for x in b: o += x
             d.close()
@@ -156,8 +157,11 @@ def application(environ, start_response):
             o += 'HTTP GET request:\n\tstat\n\tsource\n\tlog\n'
         else:
             o = '<?xml version="1.0" encoding="utf-8"?>\n' 
-            o += '<svg xmlns="http://www.w3.org/2000/svg">\n'
-            o += '<style type="text/css">text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{fill:gray;}text.note{font-family:cursive;fill:#CCC;font-size:8pt;text-anchor:end;}</style>\n'
+            o += '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink">\n'
+            o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
+            #o += '<link xlink:href="http://fonts.googleapis.com/css?family=Schoolbell" rel="stylesheet" type="text/css"/>\n' 
+            o += '<style>@import url(http://fonts.googleapis.com/css?family=Schoolbell);</style>\n'
+            o += '<style type="text/css">text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{fill:gray;}text.alpha{font-family:Schoolbell;fill:#F87217;}text.note{fill:#CCC;font-size:8pt;text-anchor:end;}text.w{fill:white;}rect{fill:#CCC;}</style>\n'
             o += '<path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/>'
             d = dbm.open('/u/bank',)
             nb, su, ck = 0, 0, 0
@@ -168,17 +172,21 @@ def application(environ, start_response):
                     ck += float(d[x])
             today = '%s' % datetime.datetime.now()
             o += '<text x="90" y="70" font-size="48" title="banking for intangible goods">Bank</text>\n'
-            o += '<text class="note" x="110"  y="22" title="still in security test!">Alpha</text>\n'
-            o += '<text class="note" x="98%" y="22" text-anchor="end" title="We provide ⊔funding if the hack is shared">Hack it!</text>\n'
+            o += '<text class="alpha" font-size="14pt" x="72"  y="25" title="still in security test!">Alpha!</text>\n'
+            o += '<text class="alpha" font-size="50pt" x="100" y="180">No \"https\", better security!</text>\n'
+            o += '<a xlink:href="u?pi"><text class="note" x="99%" y="22" title="at home!">Host</text></a>\n'            
             o += '<text class="foot" x="20"  y="100">%s</text>\n' % today[:19]
-            o += '<text class="foot" x="20"  y="160">%04d users</text>\n' % nb
-            o += '<text class="foot" x="120" y="160">%05d transactions</text>\n' % int(d['NB_TR'])
-            o += '<text class="foot" x="280" y="160">volume: %7.3f ⊔</text>\n' % su
-            o += '<text class="foot" x="480" y="160" title="Intangible Goods">%04d IG</text>\n' % (0)
+            o += '<text class="foot" x="20"  y="260">%04d users</text>\n' % nb
+            o += '<text class="foot" x="120" y="260">%05d transactions</text>\n' % int(d['NB_TR'])
+            o += '<text class="foot" x="280" y="260">volume: %7.3f ⊔</text>\n' % su
+            o += '<text class="foot" x="480" y="260" title="number of registered Intangible Goods">%04d IG</text>\n' % (0)
+            o += '<a xlink:href="bank?source"><rect x="6" y="95%" width="210" height="25" rx="8" ry="8"/><text class="w" x="10" y="98%" title="hack it, share it!">Download the source code!</text></a>\n'
 
-            o += '<text class="note" x="98%%" y="180">status: %s</text>\n' % ('ok' if ck == 0 else 'error')
-            o += '<text class="note" x="98%%" y="200">digest: %s|%s</text>\n' % (d['__DIGEST__'].decode('utf-8'), __digest__.decode('utf-8'))
-            o += '<text class="note" x="98%" y="220" title="or visit \'www.cupfoundation.net\'">Contact: laurent.fournier@cupfoundation.net</text>\n' 
+
+            o += '<a xlink:href="bank?log"><text class="foot" x="20" y="300">log file</text></a>\n'
+            o += '<text class="note" x="99%%" y="90%%">status: %s</text>\n' % ('ok' if (abs(ck) <= 0.00001) else 'error')
+            o += '<text class="note" x="99%%" y="94%%">digest: %s|%s</text>\n' % (d['__DIGEST__'].decode('utf-8'), __digest__.decode('utf-8'))
+            o += '<text class="note" x="99%" y="98%" title="or visit \'www.cupfoundation.net\'">Contact: laurent.fournier@cupfoundation.net</text>\n' 
             d.close()
             o += '</svg>\n'
             mime = 'application/xhtml+xml; charset=utf-8'
@@ -306,12 +314,12 @@ if __name__ == '__main__':
     ds.close()
 
     host = 'localhost'
-    #for a in popu: print (register(a, popu[a], host))
-    #print (register_ig('Alice', 'toto您tata', 0.56, 100000, host))
-    #print (transaction('Alice',   'Bob', 1.65, host))
-    #print (transaction('Valérie', 'Carl⊔', 4.65, host))
-    #print (transaction('Bob',     'Valérie', 2.15, host))
-    #print (transaction('Bob',     'Daniel', 4.65, host))
+    for a in popu: print (register(a, popu[a], host))
+    print (register_ig('Alice', 'toto您tata', 0.56, 100000, host))
+    print (transaction('Alice',   'Bob', 1.65, host))
+    print (transaction('Valérie', 'Carl⊔', 4.65, host))
+    print (transaction('Bob',     'Valérie', 2.15, host))
+    print (transaction('Bob',     'Daniel', 4.65, host))
     #print (buy('Bob', 'toto您tata', host))
     print (read_ballance('Daniel', False, host))
     print (transaction('Daniel', 'Valérie', 44.65, host))

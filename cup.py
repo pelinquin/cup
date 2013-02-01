@@ -354,7 +354,7 @@ def application(environ, start_response):
     if m: return app_read(bytes(m.group(1), 'ascii'), environ, start_response)
     o = '<?xml version="1.0" encoding="utf-8"?>\n<html>\n' 
     o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
-    o += '<link href="http://fonts.googleapis.com/css?family=Schoolbell" rel="stylesheet" type="text/css">\n' 
+    o += '<link href="http://fonts.googleapis.com/css?family=Schoolbell" rel="stylesheet" type="text/css"/>\n' 
     o += style() + script() + head()
     agents = {}
     if os.path.isfile('/u/net.db'):
