@@ -84,7 +84,7 @@ def application(environ, start_response):
 def frontpage(today):
     "_"
     o = '<?xml version="1.0" encoding="utf-8"?>\n' 
-    o += '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink">\n'
+    o += '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" heigth="100%">\n'
     o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
     o += '<style>@import url(http://fonts.googleapis.com/css?family=Schoolbell);</style>\n'
     o += '<style type="text/css">text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{fill:gray;text-anchor:start;}text.alpha{font-family:Schoolbell;fill:#F87217;}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}text.w{fill:white;}rect{fill:#CCC;}</style>\n'
@@ -96,7 +96,7 @@ def frontpage(today):
             nb += 1
             su += abs(float(d[x])/2)
             ck += float(d[x])
-    o += '<text x="90" y="70" font-size="48" title="banking for intangible goods">Bank</text>\n'
+    o += '<text x="90" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
     o += '<text class="alpha" font-size="14pt" x="72"  y="25" title="still in security test!">Beta</text>\n'
     o += '<text class="alpha" font-size="64pt" text-anchor="middle" x="50%" y="40%"><tspan>No \"https\", no JavaScript,</tspan><tspan x="50%" dy="100">better security!</tspan></text>\n'
     o += '<text class="foot" x="20"  y="100">%s</text>\n' % today[:19]
@@ -105,9 +105,9 @@ def frontpage(today):
     o += '<text class="foot" x="60%%" y="80%%">volume: %09.2f ⊔</text>\n' % su
     o += '<text class="foot" x="80%%" y="80%%" title="number of registered Intangible Goods">%04d IG</text>\n' % (0)
     o += '<a xlink:href="bank?source"><text class="note" text-anchor="start" x="160" y="98%" title="hack it, share it!">Download the source code!</text></a>\n'
-    o += '<a xlink:href="u?pi"><text class="note" x="99%" y="20" title="at home!">Host</text></a>\n'            
-    o += '<a xlink:href="bank?log"><text class="note" x="99%" y="40">Log</text></a>\n'
-    o += '<a xlink:href="bank?help"><text class="note" x="99%" y="60">Help</text></a>\n'
+    o += '<a xlink:href="u?pi"><text class="note"      x="99%" y="40" title="at home!">Host</text></a>\n'            
+    o += '<a xlink:href="bank?log"><text class="note"  x="99%" y="60" title="log file">Log</text></a>\n'
+    o += '<a xlink:href="bank?help"><text class="note" x="99%" y="20" title="help">Help</text></a>\n'
     o += '<text class="note" x="99%%" y="92%%">Status: %s</text>\n' % ('ok' if (abs(ck) <= 0.00001) else 'error')
     o += '<text class="note" x="99%%" y="95%%">Digest: %s|%s</text>\n' % (d['__DIGEST__'].decode('utf-8'), __digest__.decode('utf-8'))
     o += '<text class="note" x="99%"  y="98%" title="or visit \'www.cupfoundation.net\'">Contact: laurent.fournier@cupfoundation.net</text>\n' 
