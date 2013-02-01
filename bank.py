@@ -25,6 +25,8 @@ from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES
 __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf-8').read().encode('utf-8')).digest())[:5]
 
+__email__ = 'laurent.fournier@cupfoundation.net'
+__url__   = 'http://cupfoundation.net'
 RSA_E = 65537
 MAX_ARG_SIZE = 2000
 
@@ -76,6 +78,8 @@ def application(environ, start_response):
         elif way == 'get':
             if raw.lower() in ('source', 'src', 'download'):
                 o = open(__file__, 'r', encoding='utf-8').read()
+            if raw.lower() in ('help', 'about'):
+                o = 'Here is the Help in PDF format soon!'
             else:
                 o, mime = frontpage(today), 'application/xhtml+xml; charset=utf-8'
     else:
@@ -84,38 +88,42 @@ def application(environ, start_response):
     start_response('200 OK', [('Content-type', mime)])
     return [o.encode('utf-8')] 
 
-def frontpage(today):
+def favicon():
     "_"
-    o = '<?xml version="1.0" encoding="utf-8"?>\n' 
-    o += '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink">\n'
-    o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
-    o += '<style>@import url(http://fonts.googleapis.com/css?family=Schoolbell);</style>\n'
-    o += '<style type="text/css">svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:14pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
-    o += '<a xlink:href="http://cupfoundation.net"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>'
+    code = '<path n="%s" stroke-width="4" fill="none" stroke="Dodgerblue" d="M3,1L3,14L13,14L13,1"/>' % datetime.datetime.now()
+    tmp = base64.b64encode(code.encode('utf-8'))
+    return '<link rel="shortcut icon" type="image/svg+xml" xlink:href="data:image/svg+xml;base64,%s"/>\n' % tmp.decode('utf-8')
+
+def frontpage(today):
+    "not in html!"
     d = dbm.open('/u/bank')
-    nb, su, ck = 0, 0, 0
+    nb, su, ck , tr, di = 0, 0, 0, int(d['NB_TR']), d['__DIGEST__']
     for x in d.keys():
         if reg(re.match('BAL_(.*)$', x.decode('utf-8'))):
             nb += 1
             su += abs(float(d[x])/2)
             ck += float(d[x])
+    d.close()
+    o = '<?xml version="1.0" encoding="utf-8"?>\n' 
+    o += '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink">\n' + favicon()
+    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:14pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
+    o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="90" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
-    o += '<text class="alpha" font-size="16pt" x="92" y="25" title="still in security test!">Beta</text>\n'
-    o += '<text class="alpha" font-size="64pt" text-anchor="middle" x="50%" y="40%"><tspan>No \"https\", no JavaScript,</tspan><tspan x="50%" dy="100">better security!</tspan></text>\n'
+    o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!">Beta</text>\n'
+    o += '<text class="alpha" font-size="64pt" x="50%" y="40%"><tspan title="and no \'html\' either!">No \"https\", no JavaScript,</tspan><tspan x="50%" dy="100" title="better privacy also!">better security!</tspan></text>\n'
     o += '<text class="foot" x="100"  y="100" title="today">%s</text>\n' % today[:19]
     o += '<text class="foot" x="20%%" y="80%%" title="registered users">%04d users</text>\n' % nb
-    o += '<text class="foot" x="40%%" y="80%%" title="">%06d transactions</text>\n' % int(d['NB_TR'])
+    o += '<text class="foot" x="40%%" y="80%%" title="">%06d transactions</text>\n' % tr
     o += '<text class="foot" x="60%%" y="80%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % su
     o += '<text class="foot" x="80%%" y="80%%" title="number of registered Intangible Goods">%04d IG</text>\n' % (0)
-    o += '<a xlink:href="bank?source"><text class="note" text-anchor="start" x="160" y="98%" title="on GitHub (https://github.com/pelinquin/cup) hack it, share it!">Download the source code!</text></a>\n'
-    o += '<a xlink:href="u?pi"><text class="note"      x="99%" y="40" title="at home!">Host</text></a>\n'            
-    o += '<a xlink:href="bank?log"><text class="note"  x="99%" y="60" title="log file">Log</text></a>\n'
-    o += '<a xlink:href="bank?help"><text class="note" x="99%" y="20" title="help">Help</text></a>\n'
-    o += '<text class="note" x="50%%" y="98%%" title="you can use that server!">Status: <tspan fill="green">%s</tspan></text>\n' % ('OK' if (abs(ck) <= 0.00001) else 'error')
-    o += '<text class="note" x="99%%" y="95%%">Digest: %s|%s</text>\n' % (d['__DIGEST__'].decode('utf-8'), __digest__.decode('utf-8'))
-    o += '<text class="note" x="99%"  y="98%" title="or visit \'www.cupfoundation.net\'">Contact: laurent.fournier@cupfoundation.net</text>\n' 
-    d.close()
-    return o + '</svg>\n'
+    o += '<a xlink:href="bank?src" ><text class="note" x="160" y="98%" title="on GitHub (https://github.com/pelinquin/cup) hack it, share it!">Download the source code!</text></a>\n'
+    o += '<a xlink:href="u?pi"     ><text class="note" x="99%" y="40"  title="at home!">Host</text></a>\n'            
+    o += '<a xlink:href="bank?log" ><text class="note" x="99%" y="60"  title="log file">Log</text></a>\n'
+    o += '<a xlink:href="bank?help"><text class="note" x="99%" y="20"  title="help">Help</text></a>\n'
+    o += '<text class="note" x="50%%" y="98%%" title="you can use that server!">Status: <tspan fill="green">%s</tspan></text>\n' % ('OK' if (abs(ck) <= 0.00001) else 'error!')
+    o += '<text class="note" x="99%%" y="95%%" title="database|program" >Digest: %s|%s</text>\n' % (di.decode('utf-8'), __digest__.decode('utf-8'))
+    o += '<text class="note" x="99%%" y="98%%" title="or visit \'%s\'">Contact: %s</text>\n' % (__url__, __email__) 
+    return o + '</svg>'
 
 def register(owner, iduser='anonymous', post=False, host='localhost'):
     co, td = http.client.HTTPConnection(host), '%s' % datetime.datetime.now()
@@ -123,7 +131,8 @@ def register(owner, iduser='anonymous', post=False, host='localhost'):
     ki, kb = [b64toi(x) for x in ds[owner].split()], [x for x in ds[owner].split()]
     ds.close()
     s = sign(ki[1], ki[2], ' '.join((td[:10], owner, iduser)))
-    cmd = 'reg("%s","%s","%s","%s")' % (owner, iduser, kb[1].decode('ascii'), s.decode('ascii'))
+    assert (verify(RSA_E, ki[2], ' '.join((td[:10], owner, iduser)), s))
+    cmd = 'reg("%s","%s","%s","%s")' % (owner, iduser, kb[2].decode('ascii'), s.decode('ascii'))
     if post:
         co.request('POST', '/bank', urllib.parse.quote(cmd))
     else:
@@ -262,36 +271,7 @@ def application_old(environ, start_response):
             o = '<?xml version="1.0" encoding="utf-8"?>\n' 
             o += '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink">\n'
             o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
-            #o += '<link xlink:href="http://fonts.googleapis.com/css?family=Schoolbell" rel="stylesheet" type="text/css"/>\n' 
             o += '<style>@import url(http://fonts.googleapis.com/css?family=Schoolbell);</style>\n'
-            o += '<style type="text/css">text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{fill:gray;}text.alpha{font-family:Schoolbell;fill:#F87217;}text.note{fill:#CCC;font-size:8pt;text-anchor:end;}text.w{fill:white;}rect{fill:#CCC;}</style>\n'
-            o += '<a xlink:href="http://cupfoundation.net"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>'
-            d = dbm.open('/u/bank',)
-            nb, su, ck = 0, 0, 0
-            for x in d.keys():
-                if reg(re.match('BAL_(.*)$', x.decode('utf-8'))):
-                    nb += 1
-                    su += abs(float(d[x])/2)
-                    ck += float(d[x])
-            today = '%s' % datetime.datetime.now()
-            o += '<text x="90" y="70" font-size="48" title="banking for intangible goods">Bank</text>\n'
-            o += '<text class="alpha" font-size="14pt" x="72"  y="25" title="still in security test!">Beta</text>\n'
-            o += '<text class="alpha" font-size="64pt" text-anchor="middle" x="50%" y="50%"><span>No \"https\", no JavaScript,</span><span>better security!</span></text>\n'
-
-            o += '<text class="foot" x="20"  y="100">%s</text>\n' % today[:19]
-            o += '<text class="foot" x="20"  y="360">%04d users</text>\n' % nb
-            o += '<text class="foot" x="240" y="360">%05d transactions</text>\n' % int(d['NB_TR'])
-            o += '<text class="foot" x="460" y="360">volume: %09.2f ⊔</text>\n' % su
-            o += '<text class="foot" x="680" y="360" title="number of registered Intangible Goods">%04d IG</text>\n' % (0)
-            o += '<a xlink:href="bank?source"><text class="note" text-anchor="start" x="220" y="98%" title="on Github (https://github.com/pelinquin/cup), hack it, share it!">Download the source code!</text></a>\n'
-            o += '<a xlink:href="u?pi"><text class="note" x="99%" y="20" title="at home!">Host</text></a>\n'            
-            o += '<a xlink:href="bank?log"><text class="note" x="99%" y="40">Log</text></a>\n'
-            o += '<a xlink:href="bank?help"><text class="note" x="99%" y="60">Help</text></a>\n'
-
-            o += '<text class="note" x="99%%" y="90%%">Status: %s</text>\n' % ('ok' if (abs(ck) <= 0.00001) else 'error')
-            o += '<text class="note" x="99%%" y="94%%">Digest: %s|%s</text>\n' % (d['__DIGEST__'].decode('utf-8'), __digest__.decode('utf-8'))
-            o += '<text class="note" x="99%" y="98%" title="or visit \'www.cupfoundation.net\'">Contact: laurent.fournier@cupfoundation.net</text>\n' 
-            d.close()
             o += '</svg>\n'
             mime = 'application/xhtml+xml; charset=utf-8'
     start_response('200 OK', [('Content-type', mime)])
@@ -446,9 +426,8 @@ if __name__ == '__main__':
 
 
     print (register('Valérie', 'anonymous', False, 'localhost'))
+    print (register('Valérie', 'anonymous', False, '192.168.1.24'))
 
-
-    
     sys.exit()
 
 # End ⊔net!
