@@ -150,7 +150,13 @@ def application(environ, start_response):
             for x in b: o += x
             d.close()
         elif arg.lower() in ('about', 'help'):
-            o = 'Welcome to ⊔net!\n\nHTTP POST request:\n'
+            o = 'Welcome to ⊔net!\n\n'
+            o += 'First you need your own 4096 bits long RSA key (used GPG or sshgen to generate it)\n\n'
+            o += '! You will never have to send us your private key; keep it secure, out of Internet access\n\n'
+
+            o += 'The main integrity rule is that the sum of all acounts balance is always null.\n\n'
+
+            o += 'HTTP POST only request:\n'
             o += '\tPK(agent, public_key)\n'
             o += '\tTR(buyer, seller, price, current_date, buyer_signature) with signed message = \'seller|price|\' returns status (OK,KO)\n'
             o += '\tBAL(owner, owner_signature) with signed message = \'date_of_the_day\' returns ballance\n'
@@ -172,18 +178,19 @@ def application(environ, start_response):
                     ck += float(d[x])
             today = '%s' % datetime.datetime.now()
             o += '<text x="90" y="70" font-size="48" title="banking for intangible goods">Bank</text>\n'
-            o += '<text class="alpha" font-size="14pt" x="72"  y="25" title="still in security test!">Alpha!</text>\n'
+            o += '<text class="alpha" font-size="14pt" x="72"  y="25" title="still in security test!">Beta</text>\n'
             o += '<text class="alpha" font-size="50pt" x="100" y="180">No \"https\", better security!</text>\n'
-            o += '<a xlink:href="u?pi"><text class="note" x="99%" y="22" title="at home!">Host</text></a>\n'            
+
             o += '<text class="foot" x="20"  y="100">%s</text>\n' % today[:19]
             o += '<text class="foot" x="20"  y="260">%04d users</text>\n' % nb
             o += '<text class="foot" x="120" y="260">%05d transactions</text>\n' % int(d['NB_TR'])
             o += '<text class="foot" x="280" y="260">volume: %7.3f ⊔</text>\n' % su
             o += '<text class="foot" x="480" y="260" title="number of registered Intangible Goods">%04d IG</text>\n' % (0)
             o += '<a xlink:href="bank?source"><rect x="6" y="95%" width="210" height="25" rx="8" ry="8"/><text class="w" x="10" y="98%" title="hack it, share it!">Download the source code!</text></a>\n'
+            o += '<a xlink:href="u?pi"><text class="note" x="99%" y="20" title="at home!">Host</text></a>\n'            
+            o += '<a xlink:href="bank?log"><text class="note" x="99%" y="40">log</text></a>\n'
+            o += '<a xlink:href="bank?help"><text class="note" x="99%" y="60">help</text></a>\n'
 
-
-            o += '<a xlink:href="bank?log"><text class="foot" x="20" y="300">log file</text></a>\n'
             o += '<text class="note" x="99%%" y="90%%">status: %s</text>\n' % ('ok' if (abs(ck) <= 0.00001) else 'error')
             o += '<text class="note" x="99%%" y="94%%">digest: %s|%s</text>\n' % (d['__DIGEST__'].decode('utf-8'), __digest__.decode('utf-8'))
             o += '<text class="note" x="99%" y="98%" title="or visit \'www.cupfoundation.net\'">Contact: laurent.fournier@cupfoundation.net</text>\n' 
