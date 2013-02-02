@@ -20,10 +20,18 @@
 #-----------------------------------------------------------------------------
 "_"
 
-import re, os, sys, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime
+import re, os, sys, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES
+#import kern
+
 __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf-8').read().encode('utf-8')).digest())[:5]
+
+__embedded_fonts__ = ('cmr10', 'cmr17')
+
+__fonts__ = ('Helvetica', 'Times-Roman', 'Courier', 'Times-Bold', 'Helvetica-Bold', 'Courier-Bold', 'Times-Italic', 'Helvetica-Oblique', 
+             'Courier-Oblique', 'Times-BoldItalic', 'Helvetica-BoldOblique', 'Courier-BoldOblique', 'Symbol') + __embedded_fonts__
+
 
 __email__ = 'laurent.fournier@cupfoundation.net'
 __url__   = 'http://cupfoundation.net'
@@ -114,12 +122,12 @@ def frontpage(today):
     d.close()
     o = '<?xml version="1.0" encoding="utf-8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
-    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:14pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
+    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:16pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="90" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
     o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!">Beta</text>\n'
     o += '<text class="alpha" font-size="64pt" x="50%" y="40%"><tspan title="and no \'html\' either!">No \"https\", no JavaScript,</tspan><tspan x="50%" dy="100" title="better privacy also!">better security!</tspan></text>\n'
-    o += '<text class="foot" x="100"  y="100" title="today">%s</text>\n' % today[:19]
+    o += '<text class="foot" x="50%%"  y="40" title="today">%s</text>\n' % today[:19]
     o += '<text class="foot" x="20%%" y="80%%" title="registered users">%04d users</text>\n' % nb
     o += '<text class="foot" x="40%%" y="80%%" title="">%06d transactions</text>\n' % tr
     o += '<text class="foot" x="60%%" y="80%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % su
@@ -362,7 +370,137 @@ def buy(byr, ig, host='localhost'):
     co.request('POST', '/bank', 'BUY("%s", "%s", %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(ig), td, s))
     ds.close()
     return co.getresponse().read().decode('utf-8')
+
+class updf:
+    def __init__(self, pagew, pageh, binary=True):
+        self.pw = pagew
+        self.ph = pageh
+        self.mx, self.my = 25, 25
+        self.binary = binary
+        self.i = 0
+        self.pos = []
+        self.o = b'%PDF-1.4\n%'
+        #afmpath = pfbpath = '/usr/share/fonts/type1/gsfonts/' 
+        afmpath, pfbpath = '/home/laurent/afm/', '/home/laurent/pfb/'
+        self.afm = [kern.AFM(open(afmpath + '%s.afm' % f)) for f in __fonts__]
+        self.pfb = [open(pfbpath + '%s.pfb' % f, 'rb').read() for f in __embedded_fonts__]
     
+    def add(self, line):
+        self.pos.append(len(self.o))
+        self.i += 1
+        self.o += bytes('%d 0 obj<<%s>>endobj\n' % (self.i, line), 'ascii')
+    
+    def addnull(self):
+        self.pos.append(len(self.o))
+        self.i += 1
+        self.o += bytes('%d 0 obj 0 endobj\n' % (self.i), 'ascii')
+    
+    def addarray(self, a):
+        self.pos.append(len(self.o))
+        self.i += 1
+        self.o += bytes('%d 0 obj [%s] endobj\n' % (self.i, ''.join(['%s '%i for i in a])), 'ascii')
+    
+    def adds(self, stream):
+        self.pos.append(len(self.o))
+        self.i += 1
+        if self.binary: stream = zlib.compress(stream) 
+        fil = '/Filter/FlateDecode' if self.binary else ''
+        self.o += bytes('%d 0 obj<</Length %d%s>>stream\n' % (self.i, len(stream), fil), 'ascii')
+        self.o += stream
+        self.o += b'endstream endobj\n'
+
+    def adds3(self, stream):
+        self.pos.append(len(self.o))
+        self.i += 1
+        fil = '/Filter/FlateDecode' if self.binary else ''
+        len1, len2, len3 = 0, 0, 0
+        m = re.search(b'currentfile eexec', stream)
+        if m: len1 = m.start()+18
+        m = re.search(b'0000000000', stream)
+        if m: len2 = m.start() - len1
+        len3 = len(stream) - len1 - len2
+        if self.binary: stream = zlib.compress(stream) 
+        ltot = len(stream)
+        self.o += bytes('%d 0 obj<</Length1 %d/Length2 %d/Length3 %d/Length %d%s>>stream\n' % (self.i, len1, len2, len3, ltot, fil), 'ascii')
+        self.o += stream
+        self.o += b'endstream endobj\n'
+
+    def kern(self, s, a):
+        ""
+        return ')-338('.join([a.k(l) for l in s.split()])
+
+    def sgen(self, par):
+        "stream parser"
+        ff, other = par[2].split('F'), False
+        o = '1 0 0 1 %s %s Tm /F%s %s Tf %s TL ' % (par[0]+self.mx, self.ph-par[1]-self.my, ff[1], ff[0], 1.2*int(ff[0]))
+        for m in re.compile(r'(/(\d+)F(\d+)\{([^\}]*)\}|([^\n/]+))').finditer(par[3]):
+            if m.group(5):
+                o += '%s[(%s)]TJ ' % ('T* ' if other else '', self.kern(m.group(5), self.afm[int(ff[1])-1])) 
+                other = True
+            if m.group(2) and m.group(4) and m.group(3):
+                other = False
+                o += '/F%s %s Tf [(%s)]TJ /F%s %s Tf ' % (m.group(3), m.group(2), self.kern(m.group(4), self.afm[int(ff[1])-1]), ff[1], ff[0])
+        return o
+
+    def gen(self, document):
+        "generate a valid binary PDF file, ready for printing!"
+        np = len(document)
+        self.o += b'\xBF\xF7\xA2\xFE\n' if self.binary else b'ASCII!\n'
+        self.add('/Linearized 1.0/L 1565/H [570 128]/O 11/E 947/N 111/T 1367')
+        ref, kids, seenall, fref, h, firstp = [], '', {}, [], {}, 0
+        for p, page in enumerate(document):
+            t = bytes('BT 1 w 0.9 0.9 0.9 RG %s %s %s %s re S 0 0 0 RG 0 Tc ' % (self.mx, self.my, self.pw-2*self.mx, self.ph-2*self.my), 'ascii')
+            for par in page: t += bytes(self.sgen(par), 'ascii')
+            t += b'ET\n'
+            t1 = bytes('/P <</MCID 0>> BDC BT 1 0 0 1 10 20 Tm /F1 12 Tf (HELLO)Tj ET EMC /Link <</MCID 1>> BDC BT 1 0 0 1 100 20 Tm /F1 16 Tf (With a link)Tj ET EMC', 'ascii')
+            self.adds(t)
+            ref.append('%s 0 R' % self.i)
+        for p, page in enumerate(document):
+            seen = {}
+            for par in page:
+                for m in re.compile('/\d+F(\d+)\{').finditer('/%s{%s' % (par[2], par[3])):
+                    seen[m.group(1)] = True
+            fref.append(' '.join(seen))
+            seenall.update(seen)
+        fc, lc = 0, 255 
+        for f in seenall:
+            if int(f) > len(__fonts__)-1:
+                self.addarray([self.afm[int(f)-1].w(i) for i in range(fc, lc+1)])
+                indice = int(f)-len(__fonts__)+2
+                self.adds3(self.pfb[int(f)-len(__fonts__)+2])
+                bb = self.afm[int(f)-1]._header[b'FontBBox']
+                self.add('/Type/FontDescriptor/FontName/%s/Flags 4/FontBBox[%s]/Ascent 704/CapHeight 674/Descent -194/ItalicAngle 0/StemV 109/FontFile %s 0 R' % (__fonts__[int(f)-1], ''.join(['%s '% i for i in bb]), self.i))
+                self.add('/Type/Font/Subtype/Type1/BaseFont/%s/FirstChar %d/LastChar %s/Widths %s 0 R/FontDescriptor %d 0 R'% (__fonts__[int(f)-1], fc, lc, self.i-2 , self.i))
+            else:
+                self.addnull()
+                self.addnull()
+                self.addnull()
+                self.add('/Type/Font/Subtype/Type1/BaseFont/%s' % (__fonts__[int(f)-1]))
+            h[f] = self.i
+        nba = ['www.google.com']
+        for a in nba:
+            #self.add('/Type/Annot/Subtype/Link/Border[16 16 1]/Rect[150 600 270 640]/Dest[10 0 R/Fit]')
+            self.add('/Type/Annot/Subtype/Link/Border[16 16 1]/Rect[150 600 270 640]/A<</Type/Action/S/URI/URI(http://pelinquin/u?beamer)>> ')
+            #self.add('/Type/Annot/Subtype/Link/Border[16 16 1]/Rect[150 600 270 640]/A<</S/URL/URL(./u?beamer)>> ')
+            #self.add('/Type/Annot/Subtype/Link/Border[16 16 1]/K<</Type/MCR/MCID 0/Pg 10 0 R>>/A<</S/URL/URL(http://pelinquin/u?beamer)>> ')
+        aref = self.i
+        pref = np + self.i + 1
+        for p, page in enumerate(document):
+            fo = functools.reduce(lambda y, i: y+'/F%s %d 0 R' % (i, h[i]), fref[p].split(), '')
+            self.add('/Type/Page/Parent %d 0 R/Contents %s/Annots[%d 0 R]/Resources<</Font<<%s>> >> ' % (pref, ref[p], aref, fo))
+            kids += '%s 0 R ' % self.i
+            if p == 1: firstp = self.i
+        self.add('/Type/Pages/MediaBox[0 0 %s %s]/Count %d/Kids[%s]' % (self.pw, self.ph, np, kids[:-1]))
+        pagesid = self.i
+        self.add('/Type/Outlines/First %s 0 R/Last %s 0 R/Count 1' % (self.i+2, self.i+2))
+        self.add('/Title (Document)/Parent %d 0 R/Dest [%d 0 R /Fit]' % (self.i, firstp)) 
+        self.add('/FS /URL /F (http://www.google.com)')
+        self.add('/URLS[%s 0 R]' % self.i)
+        self.add('/Type/Catalog/Pages %d 0 R/Outlines %d 0 R/Names %d 0 R' % (pagesid, self.i-3, self.i))  
+        n, size = len(self.pos), len(self.o)
+        self.o += functools.reduce(lambda y, i: y+bytes('%010d 00000 n \n' % i, 'ascii'), self.pos, bytes('xref\n0 %d\n0000000000 65535 f \n' % (n+1), 'ascii'))
+        self.o += bytes('trailer<</Size %d/Root %d 0 R>>startxref %s\n' % (n+1, self.i, size), 'ascii') + b'%%EOF'
+        return self.o
 
 if __name__ == '__main__':
     popu = {
@@ -393,16 +531,23 @@ if __name__ == '__main__':
     #print (read_balance('Valérie', False, host))
 
     man = 'Pelinquin'
-    print (register(man, popu[man], True,  'localhost'))
-    print (register(man, popu[man], False, 'localhost'))
-    print (register(man, popu[man], False, '192.168.1.24'))
+    #print (register(man, popu[man], True,  'localhost'))
+    #print (register(man, popu[man], False, 'localhost'))
+    #print (register(man, popu[man], False, '192.168.1.24'))
 
     man = 'Valérie'
-    print (register(man, popu[man], True,  'localhost'))
-    print (register(man, popu[man], False, 'localhost'))
-    print (register(man, popu[man], False, '192.168.1.24'))
+    #print (register(man, popu[man], True,  'localhost'))
+    #print (register(man, popu[man], False, 'localhost'))
+    #print (register(man, popu[man], False, '192.168.1.24'))
     
     #print('http://pi.pelinquin.fr/bank?' + urllib.parse.quote('reg/totoé/tata⊔/1.4'))
+
+    test, content = 'The Quick Brown\nFox Jumps Over\nThe Lazy Dog',[]
+    page = [(10, 50, '50F1', 'F1 LaTeX\n'+ test),(10, 300, '50F2', 'F2 LaTeX\n'+test), (10, 550, '50F1', 'F3 LaTeX\n'+test)]
+    content.append(page)
+    #a = updf(595, 842)
+    #open('toto.pdf', 'wb').write(a.gen(content))  
+
 
     sys.exit()
 
