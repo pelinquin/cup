@@ -107,7 +107,7 @@ def frontpage(today):
     d = dbm.open('/cup/bank')
     nb, su, ck , tr, di = 0, 0, 0, int(d['NB_TR']), d['__DIGEST__']
     for x in d.keys():
-        if reg(re.match('BAL_(.*)$', x.decode('utf-8'))):
+        if reg(re.match('B_(.*)$', x.decode('utf-8'))):
             nb += 1
             su += abs(float(d[x])/2)
             ck += float(d[x])
@@ -393,10 +393,14 @@ if __name__ == '__main__':
     #print (read_balance('Valérie', False, host))
 
     man = 'Pelinquin'
-    print (register(man, popu[man], True, 'localhost'))
+    print (register(man, popu[man], True,  'localhost'))
     print (register(man, popu[man], False, 'localhost'))
+    print (register(man, popu[man], False, '192.168.1.24'))
 
-    #print (register(man, popu[man], False, '192.168.1.24'))
+    man = 'Valérie'
+    print (register(man, popu[man], True,  'localhost'))
+    print (register(man, popu[man], False, 'localhost'))
+    print (register(man, popu[man], False, '192.168.1.24'))
     
     #print('http://pi.pelinquin.fr/bank?' + urllib.parse.quote('reg/totoé/tata⊔/1.4'))
 
