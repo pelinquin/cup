@@ -27,6 +27,8 @@ __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding=
 
 __email__ = 'laurent.fournier@cupfoundation.net'
 __url__   = 'http://cupfoundation.net'
+_SVGNS    = 'xmlns="http://www.w3.org/2000/svg"'
+_XLINKNS  = 'xmlns:xlink="http://www.w3.org/1999/xlink"'
 RSA_E = 65537
 MAX_ARG_SIZE = 2000
 
@@ -44,7 +46,7 @@ def init_db(db):
 
 def application(environ, start_response):
     "wsgi server app"
-    mime, o, db, today = 'text/plain; charset=utf-8', 'Error:', '/u/bank.db', '%s' % datetime.datetime.now()
+    mime, o, db, today = 'text/plain; charset=utf-8', 'Error:', '/cup/bank.db', '%s' % datetime.datetime.now()
     init_db(db)
     if environ['REQUEST_METHOD'].lower() == 'post':
         raw, way = urllib.parse.unquote(environ['wsgi.input'].read().decode('utf-8')), 'post'
@@ -64,22 +66,28 @@ def application(environ, start_response):
             a = eval(reg.v.group(1))
             assert (a[0] == reg.v.group(2) and a[1] == reg.v.group(3) and a[2] == reg.v.group(4)) 
             o = '3 ARGS %s %s' % (way, raw)
-        elif reg(re.match(r'^\s*(reg|register)\s*(\(\s*"([^"]{3,})"\s*,\s*"([^"]{3,})"\s*,\s*"([^"]{3,})"\s*,\s*"([^"]{3,})"\s*\))\s*$', raw, re.U)):
-            c, a = reg.v.group(1).lower(), eval(reg.v.group(2))
-            assert (a[0] == reg.v.group(3) and a[1] == reg.v.group(4) and a[2] == reg.v.group(5) and a[3] == reg.v.group(6)) 
-            #o = '4 ARGS %s %s %s' % (c, way, raw)
-            pk, bal, ovr = b'PUB_' + bytes(a[0], 'utf8'), b'BAL_' + bytes(a[0], 'utf8'), b'OVR_' + bytes(a[0], 'utf8')
+        elif reg(re.match(r'^(reg|register)/([^/]+)/([^/]+)/([^/]+)/([^/]+)$', raw, re.U)):
+            own, uid, pbk, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
+            pk, bal, ovr = b'P_' + bytes(own, 'utf8'), b'B_' + bytes(own, 'utf8'), b'O_' + bytes(own, 'utf8')
             if pk in d.keys():
-                o += 'Public key already set!' 
-            elif verify(RSA_E, b64toi(bytes(a[2], 'ascii')), ' '.join((today[:10], a[0], a[1])), bytes(a[3], 'ascii')):
-                d[pk], d[bal], d[ovr], o = a[1], '0', '100', 'Public key id registration OK'
+                o += 'public key already set!' 
+            elif verify(RSA_E, b64toi(bytes(pbk, 'ascii')), ' '.join((today[:10], own, uid)), bytes(sig, 'ascii')):
+                d[pk], d[bal], d[ovr], o = pbk, '0', '100', 'Public key id registration OK'
             else:
-                o += 'Error in registration!'
+                o += 'registration!'
         elif way == 'get':
             if raw.lower() in ('source', 'src', 'download'):
                 o = open(__file__, 'r', encoding='utf-8').read()
             if raw.lower() in ('help', 'about'):
-                o = 'Here is the Help in PDF format soon!'
+                o = 'Welcome to ⊔net!\n\nHere is the Help in PDF format soon!'
+            elif raw.lower() in ('log', 'transaction'):
+                o, a = 'Welcome to ⊔net!\n\nPublic log of all transactions\n', []
+                for x in d.keys():
+                    if reg(re.match('(\d{4}.*)$', x.decode('utf-8'))):
+                        dat = d[x].split()
+                        a.append('%s %s...\n' % (reg.v.group(1), dat[3].decode('utf-8')))
+                b = sorted(a, reverse=True)
+                for x in b: o += x
             else:
                 o, mime = frontpage(today), 'application/xhtml+xml; charset=utf-8'
     else:
@@ -90,13 +98,13 @@ def application(environ, start_response):
 
 def favicon():
     "_"
-    code = '<path n="%s" stroke-width="4" fill="none" stroke="Dodgerblue" d="M3,1L3,14L13,14L13,1"/>' % datetime.datetime.now()
+    code = '<svg %s n="%s"><path stroke-width="4" fill="none" stroke="Dodgerblue" d="M3,1L3,14L13,14L13,1"/></svg>' % (_SVGNS, datetime.datetime.now())
     tmp = base64.b64encode(code.encode('utf-8'))
     return '<link rel="shortcut icon" type="image/svg+xml" xlink:href="data:image/svg+xml;base64,%s"/>\n' % tmp.decode('utf-8')
 
 def frontpage(today):
     "not in html!"
-    d = dbm.open('/u/bank')
+    d = dbm.open('/cup/bank')
     nb, su, ck , tr, di = 0, 0, 0, int(d['NB_TR']), d['__DIGEST__']
     for x in d.keys():
         if reg(re.match('BAL_(.*)$', x.decode('utf-8'))):
@@ -105,7 +113,7 @@ def frontpage(today):
             ck += float(d[x])
     d.close()
     o = '<?xml version="1.0" encoding="utf-8"?>\n' 
-    o += '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink">\n' + favicon()
+    o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
     o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:14pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="90" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
@@ -132,12 +140,11 @@ def register(owner, iduser='anonymous', post=False, host='localhost'):
     ds.close()
     s = sign(ki[1], ki[2], ' '.join((td[:10], owner, iduser)))
     assert (verify(RSA_E, ki[2], ' '.join((td[:10], owner, iduser)), s))
-    cmd = 'reg("%s","%s","%s","%s")' % (owner, iduser, kb[2].decode('ascii'), s.decode('ascii'))
+    cmd = '/'.join(('reg', owner, iduser, kb[2].decode('ascii'), s.decode('ascii')))
     if post:
         co.request('POST', '/bank', urllib.parse.quote(cmd))
     else:
         co.request('GET', '/bank?' + urllib.parse.quote(cmd))
-    #print('http://%s/bank?' % host + urllib.parse.quote(cmd))
     return co.getresponse().read().decode('utf-8')
             
 def application_old(environ, start_response):
@@ -147,7 +154,6 @@ def application_old(environ, start_response):
         d = dbm.open('/u/bank', 'c')
         d['__DIGEST__'], d['NB_TR'] = __digest__, '0'
         d.close()
-
     if environ['REQUEST_METHOD'].lower() == 'post':
         today = '%s' % datetime.datetime.now()
         raw, o = urllib.parse.unquote(environ['wsgi.input'].read().decode('utf-8')), 'error!'
@@ -267,13 +273,6 @@ def application_old(environ, start_response):
             o += '\tTR(buyer, seller, price, current_date, buyer_signature) with signed message = \'seller|price|\' returns status (OK,KO)\n'
             o += '\tBAL(owner, owner_signature) with signed message = \'date_of_the_day\' returns balance\n'
             o += 'HTTP GET request:\n\tstat\n\tsource\n\tlog\n'
-        else:
-            o = '<?xml version="1.0" encoding="utf-8"?>\n' 
-            o += '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink">\n'
-            o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
-            o += '<style>@import url(http://fonts.googleapis.com/css?family=Schoolbell);</style>\n'
-            o += '</svg>\n'
-            mime = 'application/xhtml+xml; charset=utf-8'
     start_response('200 OK', [('Content-type', mime)])
     return [o.encode('utf-8')] 
 
@@ -281,12 +280,12 @@ def itob64(n):
     "utility to transform int to base64"
     c = hex(n)[2:]
     if len(c)%2: c = '0'+c
-    return re.sub(b'=*$', b'', base64.b64encode(bytes.fromhex(c)))
+    return re.sub(b'=*$', b'', base64.urlsafe_b64encode(bytes.fromhex(c)))
 
 def b64toi(c):
     "transform base64 to int"
     if c == '': return 0
-    return int.from_bytes(base64.b64decode(c + b'='*((4-(len(c)%4))%4)), 'big')
+    return int.from_bytes(base64.urlsafe_b64decode(c + b'='*((4-(len(c)%4))%4)), 'big')
 
 def H(*tab):
     "hash"
@@ -331,21 +330,6 @@ def read_balance(owner, verbose, host='localhost'):
     ds.close()
     return co.getresponse().read().decode('utf-8')
 
-def register_old(owner, iduser=None, host='localhost'):
-    "_"
-    co = http.client.HTTPConnection(host)
-    td = '%s' % datetime.datetime.now()
-    ds = dbm.open('/u/sk')
-    k = [b64toi(x) for x in ds[owner].split()]
-    if iduser: 
-        s = sign(k[1], k[2], '%s %s %s' % (td[:10], owner, iduser))
-        co.request('POST', '/bank', 'PK("%s", "%s", "%s", %s)' % (urllib.parse.quote(owner), itob64(k[2]).decode('ascii'), iduser, s))
-    else:
-        s = sign(k[1], k[2], '%s %s' % (td[:10], owner))
-        co.request('POST', '/bank', 'PK("%s", "%s", %s)' % (urllib.parse.quote(owner), itob64(k[2]).decode('ascii'), s))
-    ds.close()
-    return co.getresponse().read().decode('utf-8')
-
 def register_ig(owner, idig, p1, pf, host='localhost'):
     "_"
     co = http.client.HTTPConnection(host)
@@ -382,12 +366,11 @@ def buy(byr, ig, host='localhost'):
 
 if __name__ == '__main__':
     popu = {
-        'Pelinquin': 'FR167071927202809', 
-        'Alice':     'FR167070280099999', 
-        'Valérie':   'FR164070287098888', 
-        'Bob':       'FR261070280095555', 
-        'Carl⊔':     'FR177070284098888', 
-        'Daniel':    'FR287070280123333',
+        'Pelinquin': 'fr167071927202809', 
+        'Alice':     'fr267070280099999', 
+        'Valérie':   'fr264070287098888', 
+        'Bob':       'fr161070280095555', 
+        'Carl⊔':     'fr177070284098888', 
         }
     
     ds = dbm.open('/u/sk', 'c')
@@ -398,9 +381,7 @@ if __name__ == '__main__':
             ds[a] = bytes(' '.join([itob64(x).decode('ascii') for x in (k.e, k.d, k.n)]), 'ascii')
     ds.close()
 
-    host = 'localhost'
     #host = 'pi.pelinquin.fr'
-    #for a in popu: print (register(a, popu[a], host))
     #print (register_ig('Alice', 'toto您tata', 0.56, 100000, host))
     #print (transaction('Alice',   'Bob', 1.65, host))
     #print (transaction('Valérie', 'Carl⊔', 4.65, host))
@@ -411,22 +392,13 @@ if __name__ == '__main__':
     #print (transaction('Daniel', 'Valérie', 44.65, host))
     #print (read_balance('Valérie', False, host))
 
-    co = http.client.HTTPConnection(host)
-    ds = dbm.open('/u/sk')    
-    ki = [b64toi(x) for x in ds['Alice'].split()]
-    kb = [x for x in ds['Alice'].split()]
-    ds.close()
-    s = sign(ki[1], ki[2], 'blabla')
+    man = 'Pelinquin'
+    print (register(man, popu[man], True, 'localhost'))
+    print (register(man, popu[man], False, 'localhost'))
 
-    cmd = 'TEST ( "hello Valérie", "%s")' % s.decode('ascii')
-    co.request('POST', '/bank', urllib.parse.quote(cmd))
-    print (co.getresponse().read().decode('utf-8'))
-    co.request('GET', '/bank?' + urllib.parse.quote(cmd))
-    print (co.getresponse().read().decode('utf-8'))
-
-
-    print (register('Valérie', 'anonymous', False, 'localhost'))
-    print (register('Valérie', 'anonymous', False, '192.168.1.24'))
+    #print (register(man, popu[man], False, '192.168.1.24'))
+    
+    #print('http://pi.pelinquin.fr/bank?' + urllib.parse.quote('reg/totoé/tata⊔/1.4'))
 
     sys.exit()
 
