@@ -82,7 +82,23 @@ def application(environ, start_response):
             elif verify(RSA_E, b64toi(bytes(pbk, 'ascii')), ' '.join((today[:10], own, uid)), bytes(sig, 'ascii')):
                 d[pk], d[bal], d[ovr], o = pbk, '0', '100', 'Public key id registration OK'
             else:
-                o += 'registration!'
+                o += 'user registration!'
+        elif reg(re.match(r'^(ig|immaterial|good)/([^/]+)/([^/]+)/([^/]+)/([^/]+)/([^/]+)$', raw, re.U)):
+            own, iid, p1, pf, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6)
+            ig, pbk = b'I_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf-8')
+            if ig in d.keys():
+                o += 'IG id already set!' 
+            elif verify(RSA_E, b64toi(d[pbk]), ' '.join((today[:10], own, iid, p1, pf)), bytes(sig, 'ascii')):
+                d[ig], o = ' '.join((p1,pf)), 'IG id registration OK'
+            else:
+                o += 'ig registration!'
+        elif reg(re.match(r'^(tr|trans|transaction)/([^/]+)/([^/]+)/([^/]+)/([^/]+)/([^/]+)$', raw, re.U)):
+            own, iid, p1, pf, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6)
+            ig, pbk = b'I_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf-8')
+            if verify(RSA_E, b64toi(d[pbk]), ' '.join((today[:10], own, iid, p1, pf)), bytes(sig, 'ascii')):
+                o = 'Transaction OK'
+            else:
+                o += 'ig registration!'
         elif way == 'get':
             if raw.lower() in ('source', 'src', 'download'):
                 o = open(__file__, 'r', encoding='utf-8').read()
@@ -113,12 +129,14 @@ def favicon():
 def frontpage(today):
     "not in html!"
     d = dbm.open('/cup/bank')
-    nb, su, ck , tr, di = 0, 0, 0, int(d['NB_TR']), d['__DIGEST__']
+    nb, su, ck , tr, di, ni = 0, 0, 0, int(d['NB_TR']), d['__DIGEST__'], 0
     for x in d.keys():
         if reg(re.match('B_(.*)$', x.decode('utf-8'))):
             nb += 1
             su += abs(float(d[x])/2)
             ck += float(d[x])
+        if reg(re.match('I_', x.decode('utf-8'))):
+            ni += 1
     d.close()
     o = '<?xml version="1.0" encoding="utf-8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
@@ -126,12 +144,13 @@ def frontpage(today):
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="90" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
     o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!">Beta</text>\n'
-    o += '<text class="alpha" font-size="64pt" x="50%" y="40%"><tspan title="and no \'html\' either!">No \"https\", no JavaScript,</tspan><tspan x="50%" dy="100" title="better privacy also!">better security!</tspan></text>\n'
+    #o += '<text class="alpha" font-size="64pt" x="50%" y="40%"><tspan title="and no \'html\' either!">No \"https\", no JavaScript,</tspan><tspan x="50%" dy="100" title="better privacy also!">better security!</tspan></text>\n'
+    o += '<text class="alpha" font-size="64pt" x="50%" y="35%"><tspan title="and no \'html\' either!">No \"https\", no \"html\",</tspan><tspan x="50%" dy="100" title="only SVG and PDF!">no \"Javascript\",</tspan><tspan x="50%" dy="100" title="better privacy also!">better security!</tspan></text>\n'
     o += '<text class="foot" x="50%%"  y="40" title="today">%s</text>\n' % today[:19]
     o += '<text class="foot" x="20%%" y="80%%" title="registered users">%04d users</text>\n' % nb
     o += '<text class="foot" x="40%%" y="80%%" title="">%06d transactions</text>\n' % tr
     o += '<text class="foot" x="60%%" y="80%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % su
-    o += '<text class="foot" x="80%%" y="80%%" title="number of registered Intangible Goods">%04d IG</text>\n' % (0)
+    o += '<text class="foot" x="80%%" y="80%%" title="number of registered Intangible Goods">%04d IGs</text>\n' % ni
     o += '<a xlink:href="bank?src" ><text class="note" x="160" y="98%" title="on GitHub (https://github.com/pelinquin/cup) hack it, share it!">Download the source code!</text></a>\n'
     o += '<a xlink:href="u?pi"     ><text class="note" x="99%" y="40"  title="at home!">Host</text></a>\n'            
     o += '<a xlink:href="bank?log" ><text class="note" x="99%" y="60"  title="log file">Log</text></a>\n'
@@ -142,6 +161,7 @@ def frontpage(today):
     return o + '</svg>'
 
 def register(owner, iduser='anonymous', post=False, host='localhost'):
+    "_"
     co, td = http.client.HTTPConnection(host), '%s' % datetime.datetime.now()
     ds = dbm.open('/u/sk')    
     ki, kb = [b64toi(x) for x in ds[owner].split()], [x for x in ds[owner].split()]
@@ -154,8 +174,36 @@ def register(owner, iduser='anonymous', post=False, host='localhost'):
     else:
         co.request('GET', '/bank?' + urllib.parse.quote(cmd))
     return co.getresponse().read().decode('utf-8')
+
+def register_ig(owner, idig, p1, pf, post=False, host='localhost'):
+    "_"
+    co, td = http.client.HTTPConnection(host), '%s' % datetime.datetime.now()
+    ds = dbm.open('/u/sk')
+    ki, kb = [b64toi(x) for x in ds[owner].split()], [x for x in ds[owner].split()]
+    ds.close()
+    s = sign(ki[1], ki[2], ' '.join((td[:10], owner, idig, '%s' % p1, '%s' % pf)))
+    cmd = '/'.join(('ig', owner, idig, '%s' % p1, '%s' % pf, s.decode('ascii')))
+    if post:
+        co.request('POST', '/bank', urllib.parse.quote(cmd))
+    else:
+        co.request('GET', '/bank?' + urllib.parse.quote(cmd))
+    return co.getresponse().read().decode('utf-8')
+
+def transaction(byr, slr, prc, post=False, host='localhost'):
+    "_"
+    co, td = http.client.HTTPConnection(host), '%s' % datetime.datetime.now()
+    ds = dbm.open('/u/sk')
+    ki, kb = [b64toi(x) for x in ds[owner].split()], [x for x in ds[owner].split()]
+    ds.close()
+    s = sign(ki[1], ki[2], ' '.join((byr, slr, prc, td)))
+    cmd = '/'.join(('transaction', byr, slr, prc, td, s))
+    if post:
+        co.request('POST', '/bank', urllib.parse.quote(cmd))
+    else:
+        co.request('GET', '/bank?' + urllib.parse.quote(cmd))
+    return co.getresponse().read().decode('utf-8')
             
-def application_old(environ, start_response):
+def appl_old(environ, start_response):
     "wsgi server app"
     mime = 'text/plain; charset=utf-8'
     if not os.path.isfile('/u/bank.db'):
@@ -189,20 +237,6 @@ def application_old(environ, start_response):
                         o = 'Duplicate transaction!'
                 else:
                     o = 'Unknown public key!'
-        # USER REGISTRATION
-        elif reg(re.match(r'^PK(\(\s*"([^\"]{3,30})".*)$', raw, re.U)): 
-            t, name = eval(reg.v.group(1)), b'PUB_' + bytes(reg.v.group(2), 'utf8')
-            assert (t[0] == reg.v.group(2))
-            if name in d.keys():
-                o = 'Public key already set!' 
-            elif (len(t) == 3) and verify(RSA_E, b64toi(bytes(t[1], 'utf-8')), '%s %s' % (today[:10], t[0]), t[2]):
-                d[name], d['BAL_'+t[0]], o = t[1], '0', 'Public key anonymous registration OK'
-                d[b'OVR_' + bytes(t[0], 'utf-8')] = '10'
-            elif (len(t) == 4) and verify(RSA_E, b64toi(bytes(t[1], 'utf-8')), '%s %s %s' % (today[:10], t[0], t[2]), t[3]):
-                d[name], d['BAL_'+t[0]], o = t[1], '0', 'Public key id registration OK'
-                d[b'OVR_' + bytes(t[0], 'utf-8')] = '100'
-            else:
-                o = 'Error in registration!'
         # IG REGISTRATION
         elif reg(re.match(r'^IG(\(\s*"([^\"]{3,30})".*)$', raw, re.U)): 
             t = eval(reg.v.group(1))
@@ -335,28 +369,6 @@ def read_balance(owner, verbose, host='localhost'):
     k = [b64toi(x) for x in ds[owner].split()]
     s = sign(k[1], k[2], td[:10])
     co.request('POST', '/bank', 'BAL("%s", %s, %s)' % (urllib.parse.quote(owner), verbose, s))
-    ds.close()
-    return co.getresponse().read().decode('utf-8')
-
-def register_ig(owner, idig, p1, pf, host='localhost'):
-    "_"
-    co = http.client.HTTPConnection(host)
-    td = '%s' % datetime.datetime.now()
-    ds = dbm.open('/u/sk')
-    k = [b64toi(x) for x in ds[owner].split()]
-    s = sign(k[1], k[2], '%s %s %s %s %s' % (td[:10], owner, idig, p1, pf))
-    co.request('POST', '/bank', 'IG("%s", "%s", %s, %s, %s)' % (urllib.parse.quote(owner), urllib.parse.quote(idig), p1, pf, s))
-    ds.close()
-    return co.getresponse().read().decode('utf-8')
-
-def transaction(byr, slr, prc, host='localhost'):
-    "_"
-    co = http.client.HTTPConnection(host)
-    ds = dbm.open('/u/sk')    
-    td = '%s' % datetime.datetime.now()
-    k = [b64toi(x) for x in ds[byr].split()]
-    s = sign(k[1], k[2], '%s %s %s %s' %(byr, slr, prc, td))
-    co.request('POST', '/bank', 'TR("%s", "%s", %s, "%s", %s)' % (urllib.parse.quote(byr), urllib.parse.quote(slr), prc, td, s))
     ds.close()
     return co.getresponse().read().decode('utf-8')
 
@@ -520,25 +532,28 @@ if __name__ == '__main__':
     ds.close()
 
     #host = 'pi.pelinquin.fr'
-    #print (register_ig('Alice', 'toto您tata', 0.56, 100000, host))
+
     #print (transaction('Alice',   'Bob', 1.65, host))
     #print (transaction('Valérie', 'Carl⊔', 4.65, host))
-    #print (transaction('Bob',     'Valérie', 2.15, host))
+
     #print (transaction('Bob',     'Daniel', 4.65, host))
     #print (buy('Bob', 'toto您tata', host))
     #print (read_balance('Daniel', False, host))
     #print (transaction('Daniel', 'Valérie', 44.65, host))
     #print (read_balance('Valérie', False, host))
 
-    man = 'Pelinquin'
+    man, ig, host = 'Pelinquin', 'toto您tata', 'localhost'
     #print (register(man, popu[man], True,  'localhost'))
     #print (register(man, popu[man], False, 'localhost'))
     #print (register(man, popu[man], False, '192.168.1.24'))
+    print (register_ig(man, ig, 0.56, 100000, False, host))
 
     man = 'Valérie'
     #print (register(man, popu[man], True,  'localhost'))
     #print (register(man, popu[man], False, 'localhost'))
     #print (register(man, popu[man], False, '192.168.1.24'))
+
+    #print (transaction('Pelinquin','Valérie', 2.15, False, host))
     
     #print('http://pi.pelinquin.fr/bank?' + urllib.parse.quote('reg/totoé/tata⊔/1.4'))
 
