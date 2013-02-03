@@ -93,16 +93,23 @@ def application(environ, start_response):
             else:
                 o += 'ig registration!'
         elif reg(re.match(r'^(tr|trans|transaction)/([^/]+)/([^/]+)/([^/]+)/([^/]+)/([^/]+)$', raw, re.U)):
-            own, iid, p1, pf, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6)
-            ig, pbk = b'I_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf-8')
-            if verify(RSA_E, b64toi(d[pbk]), ' '.join((today[:10], own, iid, p1, pf)), bytes(sig, 'ascii')):
+            byr, slr, prc, td, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6)
+            pbk, tid = bytes('P_%s' % byr, 'utf-8'), bytes('T_%s' % sig, 'utf-8')
+            if verify(RSA_E, b64toi(d[pbk]), ' '.join((byr, slr, prc, td)), bytes(sig, 'ascii')):
+                #if float(d[byr]) - float(t[2]) > -float(d[b'O_' + bytes(t[0], 'utf-8')]):
+                #    d[byr] = '%f' % (float(d[byr]) - t[2] if byr in d.keys() else -t[2])
+                #    d[slr] = '%f' % (float(d[slr]) + t[2] if slr in d.keys() else  t[2])
+                d['NB_TR'] = '%d' % (int(d['NB_TR'])+1)
+                d[tid] = 'hello'
+                #d[t[3]] = bytes(t[0], 'utf-8') + b' ' + bytes(t[1], 'utf-8') + b' ' + bytes('%s' % t[2], 'ascii') + b' ' + t[4][:8]
+                #    o = 'Transaction OK %s' % float(t[2])
                 o = 'Transaction OK'
             else:
-                o += 'ig registration!'
+                o += 'transaction!'
         elif way == 'get':
             if raw.lower() in ('source', 'src', 'download'):
                 o = open(__file__, 'r', encoding='utf-8').read()
-            if raw.lower() in ('help', 'about'):
+            elif raw.lower() in ('help', 'about'):
                 o = 'Welcome to ⊔net!\n\nHere is the Help in PDF format soon!'
             elif raw.lower() in ('log', 'transaction'):
                 o, a = 'Welcome to ⊔net!\n\nPublic log of all transactions\n', []
@@ -140,16 +147,16 @@ def frontpage(today):
     d.close()
     o = '<?xml version="1.0" encoding="utf-8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
-    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:16pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
+    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="90" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
     o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!">Beta</text>\n'
-    o += '<text class="alpha" font-size="64pt" x="50%" y="35%"><tspan title="and no \'html\' either!">No \"https\", no \"html\",</tspan><tspan x="50%" dy="100" title="only SVG and PDF!">no \"JavaScript\",</tspan><tspan x="50%" dy="100" title="better privacy also!">better security!</tspan></text>\n'
-    o += '<text class="foot" x="50%%"  y="40" title="today">%s</text>\n' % today[:19]
+    o += '<text class="alpha" font-size="64pt" x="50%" y="33%"><tspan title="and no \'html\' either!">No \"https\", no \"html\",</tspan><tspan x="50%" dy="100" title="only SVG and PDF!">no \"JavaScript\",</tspan><tspan x="50%" dy="120" title="better privacy also!">better security!</tspan></text>\n'
+    o += '<text class="foot" x="50%%" y="40" title="today">%s</text>\n' % today[:19]
     o += '<text class="foot" x="16%%" y="80%%" title="registered users">%04d users</text>\n' % nb
-    o += '<text class="foot" x="38%%" y="80%%" title="">%06d transactions</text>\n' % tr
-    o += '<text class="foot" x="62%%" y="80%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % su
-    o += '<text class="foot" x="84%%" y="80%%" title="number of registered Intangible Goods">%04d IGs</text>\n' % ni
+    o += '<text class="foot" x="38%%" y="80%%" title="number of registered Intangible Goods">%04d IGs</text>\n' % ni
+    o += '<text class="foot" x="62%%" y="80%%" title="">%06d transactions</text>\n' % tr
+    o += '<text class="foot" x="84%%" y="80%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % su
     o += '<a xlink:href="bank?src" ><text class="note" x="160" y="98%" title="on GitHub (https://github.com/pelinquin/cup) hack it, share it!">Download the source code!</text></a>\n'
     o += '<a xlink:href="u?pi"     ><text class="note" x="99%" y="40"  title="at home!">Host</text></a>\n'            
     o += '<a xlink:href="bank?log" ><text class="note" x="99%" y="60"  title="log file">Log</text></a>\n'
@@ -192,10 +199,10 @@ def transaction(byr, slr, prc, post=False, host='localhost'):
     "_"
     co, td = http.client.HTTPConnection(host), '%s' % datetime.datetime.now()
     ds = dbm.open('/u/sk')
-    ki, kb = [b64toi(x) for x in ds[owner].split()], [x for x in ds[owner].split()]
+    ki, kb = [b64toi(x) for x in ds[byr].split()], [x for x in ds[byr].split()]
     ds.close()
-    s = sign(ki[1], ki[2], ' '.join((byr, slr, prc, td)))
-    cmd = '/'.join(('transaction', byr, slr, prc, td, s))
+    s = sign(ki[1], ki[2], ' '.join((byr, slr, '%s' % prc, td)))
+    cmd = '/'.join(('transaction', byr, slr, '%s' % prc, td, s.decode('ascii')))
     if post:
         co.request('POST', '/bank', urllib.parse.quote(cmd))
     else:
@@ -552,7 +559,7 @@ if __name__ == '__main__':
     #print (register(man, popu[man], False, 'localhost'))
     #print (register(man, popu[man], False, '192.168.1.24'))
 
-    #print (transaction('Pelinquin','Valérie', 2.15, False, host))
+    print (transaction('Pelinquin','Valérie', 2.15, False, host))
     
     #print('http://pi.pelinquin.fr/bank?' + urllib.parse.quote('reg/totoé/tata⊔/1.4'))
 
