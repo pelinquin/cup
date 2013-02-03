@@ -147,15 +147,15 @@ def frontpage(today):
     d.close()
     o = '<?xml version="1.0" encoding="utf-8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
-    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
+    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100%;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="90" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
     o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!">Beta</text>\n'
-    o += '<text class="alpha" font-size="64pt" x="50%" y="33%"><tspan title="and no \'html\' either!">No \"https\", no \"html\",</tspan><tspan x="50%" dy="100" title="only SVG and PDF!">no \"JavaScript\",</tspan><tspan x="50%" dy="120" title="better privacy also!">better security!</tspan></text>\n'
-    o += '<text class="foot" x="50%%" y="40" title="today">%s</text>\n' % today[:19]
+    o += '<text class="alpha" font-size="64pt" x="50%" y="33%"><tspan title="and no \'html\' either!">No https, no html,</tspan><tspan x="50%" dy="100" title="only SVG and PDF!">no JavaScript,</tspan><tspan x="50%" dy="120" title="better privacy also!">better security!</tspan></text>\n'
+    o += '<text class="foot" x="50%%" y="50" title="today">%s</text>\n' % today[:19]
     o += '<text class="foot" x="16%%" y="80%%" title="registered users">%04d users</text>\n' % nb
-    o += '<text class="foot" x="38%%" y="80%%" title="number of registered Intangible Goods">%04d IGs</text>\n' % ni
-    o += '<text class="foot" x="62%%" y="80%%" title="">%06d transactions</text>\n' % tr
+    o += '<text class="foot" x="38%%" y="80%%" title="">%06d transactions</text>\n' % tr
+    o += '<text class="foot" x="62%%" y="80%%" title="number of registered Intangible Goods">%04d IGs</text>\n' % ni
     o += '<text class="foot" x="84%%" y="80%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % su
     o += '<a xlink:href="bank?src" ><text class="note" x="160" y="98%" title="on GitHub (https://github.com/pelinquin/cup) hack it, share it!">Download the source code!</text></a>\n'
     o += '<a xlink:href="u?pi"     ><text class="note" x="99%" y="40"  title="at home!">Host</text></a>\n'            
