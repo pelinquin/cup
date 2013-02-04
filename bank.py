@@ -20,21 +20,19 @@
 #-----------------------------------------------------------------------------
 "_"
 
-import re, os, sys, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools
-from Crypto.PublicKey import RSA
-from Crypto.Cipher import AES
+import re, os, sys, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools, subprocess
+#from Crypto.Cipher import AES
 #import kern
 
 __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf-8').read().encode('utf-8')).digest())[:5]
 
 __embedded_fonts__ = ('cmr10', 'cmr17')
-
 __fonts__ = ('Helvetica', 'Times-Roman', 'Courier', 'Times-Bold', 'Helvetica-Bold', 'Courier-Bold', 'Times-Italic', 'Helvetica-Oblique', 
              'Courier-Oblique', 'Times-BoldItalic', 'Helvetica-BoldOblique', 'Courier-BoldOblique', 'Symbol') + __embedded_fonts__
 
-
 __email__ = 'laurent.fournier@cupfoundation.net'
 __url__   = 'http://cupfoundation.net'
+
 _SVGNS    = 'xmlns="http://www.w3.org/2000/svg"'
 _XLINKNS  = 'xmlns:xlink="http://www.w3.org/1999/xlink"'
 RSA_E = 65537
@@ -52,6 +50,13 @@ def init_db(db):
         d['__DIGEST__'], d['NB_TR'] = __digest__, '0'
         d.close()
 
+def log(s, ip=''):
+    "Append to head log file"
+    logf, now = '/cup/log', '%s' % datetime.datetime.now()
+    if not os.path.isfile(logf): open(logf, 'w', encoding='utf-8').write('%s|%s Log file Creation\n' % (now[:-7], ip) )     
+    cont = open(logf, 'r', encoding='utf-8').read()
+    open(logf, 'w', encoding='utf-8').write('%s|%s|%s\n%s' % (now[:-7], ip, s, cont))
+
 def application(environ, start_response):
     "wsgi server app"
     mime, o, db, today = 'text/plain; charset=utf-8', 'Error:', '/cup/bank.db', '%s' % datetime.datetime.now()
@@ -60,65 +65,71 @@ def application(environ, start_response):
         raw, way = urllib.parse.unquote(environ['wsgi.input'].read().decode('utf-8')), 'post'
     else:
         raw, way = urllib.parse.unquote(environ['QUERY_STRING']), 'get'
+    log(raw[:10] + '...', environ['REMOTE_ADDR'])
     d = dbm.open(db[:-3], 'c')
     if len(raw) < MAX_ARG_SIZE:
-        if reg(re.match(r'^\s*TEST\s*(\(\s*"([^"]{3,})"\s*\))\s*$', raw, re.U)):
-            a = eval(reg.v.group(1))
-            assert (a == reg.v.group(2))
-            o = '1 ARG %s %s' % (way, raw)
-        elif reg(re.match(r'^\s*TEST\s*(\(\s*"([^"]{3,})"\s*,\s*"([^"]{3,})"\s*\))\s*$', raw, re.U)):
-            a = eval(reg.v.group(1))
-            assert (a[0] == reg.v.group(2) and a[1] == reg.v.group(3)) 
-            o = '2 ARGS %s %s' % (way, raw)
-        elif reg(re.match(r'^\s*TEST\s*(\(\s*"([^"]{3,})"\s*,\s*"([^"]{3,})"\s*,\s*"([^"]{3,})"\s*\))\s*$', raw, re.U)):
-            a = eval(reg.v.group(1))
-            assert (a[0] == reg.v.group(2) and a[1] == reg.v.group(3) and a[2] == reg.v.group(4)) 
-            o = '3 ARGS %s %s' % (way, raw)
-        elif reg(re.match(r'^(reg|register)/([^/]+)/([^/]+)/([^/]+)/([^/]+)$', raw, re.U)):
+        if reg(re.match(r'^(reg|register)/([^/]{3,50})/([^/]{9,17})/([^/]{680,685})/([^/]{680,685})$', raw, re.U)):
+            # checks both id and public key not already used and local id is valid
             own, uid, pbk, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
-            pk, bal, ovr = b'P_' + bytes(own, 'utf8'), b'B_' + bytes(own, 'utf8'), b'O_' + bytes(own, 'utf8')
-            if pk in d.keys():
-                o += 'public key already set!' 
+            Por, Bor, Oor, Uid = b'P_' + bytes(own, 'utf8'), b'B_' + bytes(own, 'utf8'), b'O_' + bytes(own, 'utf8'), b'U_' + bytes(uid, 'utf8')
+            if Por in d.keys():
+                o += 'public key already exists for %s !' % own 
+            elif (uid != 'anonymous') and (Uid in d.keys()):
+                o += 'user id already registered for %s !' % own 
             elif verify(RSA_E, b64toi(bytes(pbk, 'ascii')), ' '.join((today[:10], own, uid)), bytes(sig, 'ascii')):
-                d[pk], d[bal], d[ovr], o = pbk, '0', '100', 'Public key id registration OK'
+                d[Oor] = '100' if uid != 'anonymous' and uid[:2] == 'fr' and int(uid[-2:]) == (97 - int(uid[2:-2])%97) else '0' # french id!
+                d[Por], d[Bor], d[Uid], o = pbk, '0', own, 'Public key id registration OK for \'%s\'' % own 
             else:
-                o += 'user registration!'
-        elif reg(re.match(r'^(ig|immaterial|good)/([^/]+)/([^/]+)/([^/]+)/([^/]+)/([^/]+)$', raw, re.U)):
+                o += ' something wrong in user registration!'
+        elif reg(re.match(r'^(ig|immaterial|good)/([^/]{3,50})/([^/]{3,80})/([^/]{1,12})/([^/]{1,12})/([^/]{680,685})$', raw, re.U)):
+            # checks
             own, iid, p1, pf, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6)
-            ig, pbk = b'I_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf-8')
-            if ig in d.keys():
+            Iig, Ppk = b'I_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf-8')
+            if Iig in d.keys():
                 o += 'IG id already set!' 
-            elif verify(RSA_E, b64toi(d[pbk]), ' '.join((today[:10], own, iid, p1, pf)), bytes(sig, 'ascii')):
-                d[ig], o = ' '.join((p1,pf)), 'IG id registration OK'
+            elif verify(RSA_E, b64toi(d[Ppk]), ' '.join((today[:10], own, iid, p1, pf)), bytes(sig, 'ascii')):
+                d[Iig], o = ' '.join((p1, pf)), 'IG id registration OK from \'%s\'' % own
             else:
-                o += 'ig registration!'
-        elif reg(re.match(r'^(tr|trans|transaction)/([^/]+)/([^/]+)/([^/]+)/([^/]+)/([^/]+)$', raw, re.U)):
-            byr, slr, prc, td, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6)
-            pbk, tid = bytes('P_%s' % byr, 'utf-8'), bytes('T_%s' % sig, 'utf-8')
-            if verify(RSA_E, b64toi(d[pbk]), ' '.join((byr, slr, prc, td)), bytes(sig, 'ascii')):
-                #if float(d[byr]) - float(t[2]) > -float(d[b'O_' + bytes(t[0], 'utf-8')]):
-                #    d[byr] = '%f' % (float(d[byr]) - t[2] if byr in d.keys() else -t[2])
-                #    d[slr] = '%f' % (float(d[slr]) + t[2] if slr in d.keys() else  t[2])
+                o += 'ig registration fail!'
+        elif reg(re.match(r'^(tr|trans|transaction)/([^/]{3,50})/([^/]{3,50})/([^/]{1,12})/([^/]{26})/([^/]{680,685})$', raw, re.U)):
+            # checks that price is positive, transaction not replicated, and that account is funded
+            byr, slr, prc, td, sig = reg.v.group(2), reg.v.group(3), float(reg.v.group(4)), reg.v.group(5), reg.v.group(6)
+            Bby, Bsr, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'B_' + bytes(slr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'utf8'), 
+            if (prc > 0) and \
+                    not (Ttr in d.keys()) and \
+                    verify(RSA_E, b64toi(d[Pby]), ' '.join((byr, slr, '%s' % prc, td)), bytes(sig, 'ascii')) and \
+                    float(d[Bby]) - prc > - float(d[Oby]):
+                d[Bby], d[Bsr] = '%f' % (float(d[Bby]) - prc), '%f' % (float(d[Bsr]) + prc)
                 d['NB_TR'] = '%d' % (int(d['NB_TR'])+1)
-                d[tid] = 'hello'
-                #d[t[3]] = bytes(t[0], 'utf-8') + b' ' + bytes(t[1], 'utf-8') + b' ' + bytes('%s' % t[2], 'ascii') + b' ' + t[4][:8]
-                #    o = 'Transaction OK %s' % float(t[2])
-                o = 'Transaction OK'
+                d[Ttr] = '/'.join((td, byr, slr, '%s' % prc)) 
+                o = 'Transaction OK from \'%s\' to \'%s\'' % (byr, slr)
             else:
                 o += 'transaction!'
+        elif reg(re.match(r'^(state|statement|balance)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
+            own, sig = reg.v.group(2), reg.v.group(3)
+            Bow, Pow = b'B_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
+            if verify(RSA_E, b64toi(d[Pow]), ' '.join((own, today[:10])), bytes(sig, 'ascii')):
+                o, a = '%s\towner: %s\t\t         balance: \t\t\t%9.2f ⊔\n' % (today[:19], own, float(d[Bow].decode('utf-8'))), []
+                for x in d.keys():
+                    if reg(re.match('T_(.*)$', x.decode('utf-8'))):
+                        tab = d[x].decode('utf-8').split('/')
+                        if own in (tab[1], tab[2]):
+                            (t, tg) = ('\t', tab[2]) if own == tab[1] else ('\t'*3, tab[1])
+                            a.append('%s %s %25s%s%9.2f ⊔\n' % (tab[0][:19], x[2:].decode('utf-8'), tg, t, float(tab[3])))
+                b = sorted(a, reverse=True)
+                for x in b: o += x
+            else:
+                o += 'statement reading!'            
         elif way == 'get':
             if raw.lower() in ('source', 'src', 'download'):
                 o = open(__file__, 'r', encoding='utf-8').read()
             elif raw.lower() in ('help', 'about'):
                 o = 'Welcome to ⊔net!\n\nHere is the Help in PDF format soon!'
-            elif raw.lower() in ('log', 'transaction'):
-                o, a = 'Welcome to ⊔net!\n\nPublic log of all transactions\n', []
-                for x in d.keys():
-                    if reg(re.match('(\d{4}.*)$', x.decode('utf-8'))):
-                        dat = d[x].split()
-                        a.append('%s %s...\n' % (reg.v.group(1), dat[3].decode('utf-8')))
-                b = sorted(a, reverse=True)
-                for x in b: o += x
+            elif raw.lower() == 'reset':
+                subprocess.Popen(('rm', '/cup/bank.db')).communicate() # Of course this is temporary available for testing!
+                o = 'RESET DATABASE OK!'
+            elif raw.lower() in ('log',):
+                o = open('/cup/log', 'r', encoding='utf-8').read()                
             else:
                 o, mime = frontpage(today), 'application/xhtml+xml; charset=utf-8'
     else:
@@ -161,169 +172,56 @@ def frontpage(today):
     o += '<a xlink:href="u?pi"     ><text class="note" x="99%" y="40"  title="at home!">Host</text></a>\n'            
     o += '<a xlink:href="bank?log" ><text class="note" x="99%" y="60"  title="log file">Log</text></a>\n'
     o += '<a xlink:href="bank?help"><text class="note" x="99%" y="20"  title="help">Help</text></a>\n'
-    o += '<text class="note" x="50%%" y="98%%" title="you can use that server!">Status: <tspan fill="green">%s</tspan></text>\n' % ('OK' if (abs(ck) <= 0.00001) else 'error!')
+    o += '<text class="note" x="50%%" y="98%%" title="you can use that server!">Status: <tspan fill="%s</tspan></text>\n' % ('green">OK' if (abs(ck) <= 0.00001) else 'red">Error!')
     o += '<text class="note" x="99%%" y="95%%" title="database|program" >Digest: %s|%s</text>\n' % (di.decode('utf-8'), __digest__.decode('utf-8'))
     o += '<text class="note" x="99%%" y="98%%" title="or visit \'%s\'">Contact: %s</text>\n' % (__url__, __email__) 
     return o + '</svg>'
 
+def format_cmd(post, cmd):
+    co = http.client.HTTPConnection(host)    
+    if post:
+        co.request('POST', '/bank', urllib.parse.quote(cmd))
+    else:
+        co.request('GET', '/bank?' + urllib.parse.quote(cmd))
+    return co.getresponse().read().decode('utf-8')    
+
 def register(owner, iduser='anonymous', post=False, host='localhost'):
     "_"
-    co, td = http.client.HTTPConnection(host), '%s' % datetime.datetime.now()
-    ds = dbm.open('/u/sk')    
+    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')    
     ki, kb = [b64toi(x) for x in ds[owner].split()], [x for x in ds[owner].split()]
     ds.close()
     s = sign(ki[1], ki[2], ' '.join((td[:10], owner, iduser)))
     assert (verify(RSA_E, ki[2], ' '.join((td[:10], owner, iduser)), s))
     cmd = '/'.join(('reg', owner, iduser, kb[2].decode('ascii'), s.decode('ascii')))
-    if post:
-        co.request('POST', '/bank', urllib.parse.quote(cmd))
-    else:
-        co.request('GET', '/bank?' + urllib.parse.quote(cmd))
-    return co.getresponse().read().decode('utf-8')
+    return format_cmd(post, cmd)
 
 def register_ig(owner, idig, p1, pf, post=False, host='localhost'):
     "_"
-    co, td = http.client.HTTPConnection(host), '%s' % datetime.datetime.now()
-    ds = dbm.open('/u/sk')
-    ki, kb = [b64toi(x) for x in ds[owner].split()], [x for x in ds[owner].split()]
+    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
+    ki = [b64toi(x) for x in ds[owner].split()]
     ds.close()
     s = sign(ki[1], ki[2], ' '.join((td[:10], owner, idig, '%s' % p1, '%s' % pf)))
     cmd = '/'.join(('ig', owner, idig, '%s' % p1, '%s' % pf, s.decode('ascii')))
-    if post:
-        co.request('POST', '/bank', urllib.parse.quote(cmd))
-    else:
-        co.request('GET', '/bank?' + urllib.parse.quote(cmd))
-    return co.getresponse().read().decode('utf-8')
+    return format_cmd(post, cmd)    
 
 def transaction(byr, slr, prc, post=False, host='localhost'):
     "_"
-    co, td = http.client.HTTPConnection(host), '%s' % datetime.datetime.now()
-    ds = dbm.open('/u/sk')
-    ki, kb = [b64toi(x) for x in ds[byr].split()], [x for x in ds[byr].split()]
+    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
+    ki = [b64toi(x) for x in ds[byr].split()]
     ds.close()
     s = sign(ki[1], ki[2], ' '.join((byr, slr, '%s' % prc, td)))
     cmd = '/'.join(('transaction', byr, slr, '%s' % prc, td, s.decode('ascii')))
-    if post:
-        co.request('POST', '/bank', urllib.parse.quote(cmd))
-    else:
-        co.request('GET', '/bank?' + urllib.parse.quote(cmd))
-    return co.getresponse().read().decode('utf-8')
-            
-def appl_old(environ, start_response):
-    "wsgi server app"
-    mime = 'text/plain; charset=utf-8'
-    if not os.path.isfile('/u/bank.db'):
-        d = dbm.open('/u/bank', 'c')
-        d['__DIGEST__'], d['NB_TR'] = __digest__, '0'
-        d.close()
-    if environ['REQUEST_METHOD'].lower() == 'post':
-        today = '%s' % datetime.datetime.now()
-        raw, o = urllib.parse.unquote(environ['wsgi.input'].read().decode('utf-8')), 'error!'
-        o = 'error! %s' % raw
-        d = dbm.open('/u/bank', 'c')
-        # TRANSACTION
-        if reg(re.match(r'^TR(\(\s*"([^"]{3,30})"\s*,\s*"([^"]{3,30})".*)$', raw, re.U)): 
-            t, byr, slr = eval(reg.v.group(1)), b'BAL_' + bytes(reg.v.group(2), 'utf-8') , b'BAL_' + bytes(reg.v.group(3), 'utf-8')
-            if (len(t) == 5) and (type(t[2]).__name__ in  ('float', 'int')) and (type(t[0]).__name__ == 'str') and (type(t[1]).__name__ == 'str'):
-                pk = bytes('PUB_%s' % t[0], 'utf-8')
-                if pk in d.keys() and len(raw) < MAX_ARG_SIZE:
-                    if t[3] not in d.keys():
-                        if verify(RSA_E, b64toi(d[pk]), '%s %s %s %s' % tuple(t[0:4]), t[4]):
-                            if float(d[byr]) - float(t[2]) > -float(d[b'OVR_' + bytes(t[0], 'utf-8')]):
-                                d[byr] = '%f' % (float(d[byr]) - t[2] if byr in d.keys() else -t[2])
-                                d[slr] = '%f' % (float(d[slr]) + t[2] if slr in d.keys() else  t[2])
-                                d['NB_TR'] = '%d' % (int(d['NB_TR'])+1)
-                                d[t[3]] = bytes(t[0], 'utf-8') + b' ' + bytes(t[1], 'utf-8') + b' ' + bytes('%s' % t[2], 'ascii') + b' ' + t[4][:8]
-                                o = 'Transaction OK %s' % float(t[2])
-                            else:
-                                o = 'Unfunded account! (limit: -%s)' % d[b'OVR_' + bytes(t[0], 'utf-8')]
-                        else:
-                            o = 'Wrong buyer signature!'
-                    else:
-                        o = 'Duplicate transaction!'
-                else:
-                    o = 'Unknown public key!'
-        # IG REGISTRATION
-        elif reg(re.match(r'^IG(\(\s*"([^\"]{3,30})".*)$', raw, re.U)): 
-            t = eval(reg.v.group(1))
-            nameig = b'IG_' + bytes(t[1], 'utf8')
-            assert (t[0] == reg.v.group(2))
-            if nameig in d.keys():
-                o = 'IG already registered!' 
-            elif len(t) == 5: 
-                pk = bytes('PUB_%s' % t[0], 'utf-8')
-                if verify(RSA_E, b64toi(d[pk]), '%s %s %s %s %s' % (today[:10], t[0], t[1], t[2], t[3]), t[4]):
-                    d[nameig] = '%s %s %s' % (t[0], t[2], t[3])
-                    o = 'IG registration OK'
-                else:
-                    o = 'Verrif fail in IG registration!'
-            else:
-                o = 'Error in IG registration!'
-        # READ BALANCE
-        elif reg(re.match(r'^BAL(\(\s*"([^\"]{3,30})".*)$', raw, re.U)): 
-            t, name = eval(reg.v.group(1)), b'BAL_' + bytes(reg.v.group(2), 'utf8')
-            assert (t[0] == reg.v.group(2))
-            if name in d.keys():
-                pk = bytes('PUB_%s' % t[0], 'utf-8')
-                if verify(RSA_E, b64toi(d[pk]), today[:10], t[2]):
-                    if t[1]:
-                        o, a = '%s balance: %s ⊔\n' % (today, d[name].decode('utf-8')), []
-                        for x in d.keys():
-                            if reg(re.match('(\d{4}.*)$', x.decode('utf-8'))):
-                                tab = d[x].split()
-                                if bytes(t[0], 'utf-8') in (tab[0], tab[1]):
-                                    a.append('%s %s...\n' % (reg.v.group(1), d[x].decode('utf-8')))
-                        b = sorted(a, reverse=True)
-                        for x in b: o += x
-                    else:
-                        o = '%s' % d[name].decode('utf-8')                        
-                else:
-                    o = 'Bad signature!'
-        elif reg(re.match(r'^UPDATE$', raw)):
-            o = 'provision update from Github'
-        else:
-            o = 'Test! %s' % raw
-        d.close()
-    else:
-        arg = urllib.parse.unquote(environ['QUERY_STRING'])
-        if arg.lower() in ('source', 'src', 'download'):
-            o = open(__file__, 'r', encoding='utf-8').read()
-        elif arg.lower() in ('stat', 'statistics'):
-            d = dbm.open('/u/bank',)
-            nb, su, ck = 0, 0, 0
-            for x in d.keys():
-                if reg(re.match('BAL_(.*)$', x.decode('utf-8'))):
-                    nb += 1
-                    su += abs(float(d[x])/2)
-                    ck += float(d[x])
-            o =  'Number of login: %d\n' % nb
-            o += 'Total transactions: %f\n' % su
-            o += 'Check integrity (should be zero): %f\n' % ck
-            o += 'Number of transactions: %d\n' % int(d['NB_TR'])
-            o += 'Digest :%s-%s\n' % (d['__DIGEST__'].decode('utf-8'), __digest__.decode('ascii'))
-            d.close()
-        elif arg.lower() in ('log', 'transaction'):
-            d, o, a = dbm.open('/u/bank',), '', []
-            for x in d.keys():
-                if reg(re.match('(\d{4}.*)$', x.decode('utf-8'))):
-                    dat = d[x].split()
-                    a.append('%s %s...\n' % (reg.v.group(1), dat[3].decode('utf-8')))
-            b = sorted(a, reverse=True)
-            for x in b: o += x
-            d.close()
-        elif arg.lower() in ('about', 'help'):
-            o = 'Welcome to ⊔net!\n\n'
-            o += 'First you need your own 4096 bits long RSA key (used GPG or sshgen to generate it)\n\n'
-            o += '! You will never have to send us your private key; keep it secure, out of Internet access\n\n'
-            o += 'The main integrity rule is that the sum of all acounts balance is always null.\n\n'
-            o += 'HTTP POST only request:\n'
-            o += '\tPK(agent, public_key)\n'
-            o += '\tTR(buyer, seller, price, current_date, buyer_signature) with signed message = \'seller|price|\' returns status (OK,KO)\n'
-            o += '\tBAL(owner, owner_signature) with signed message = \'date_of_the_day\' returns balance\n'
-            o += 'HTTP GET request:\n\tstat\n\tsource\n\tlog\n'
-    start_response('200 OK', [('Content-type', mime)])
-    return [o.encode('utf-8')] 
+    return format_cmd(post, cmd)
 
+def statement(own, post=False, host='localhost'):
+    "_"
+    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
+    ki = [b64toi(x) for x in ds[own].split()]
+    ds.close()
+    s = sign(ki[1], ki[2], ' '.join((own, td[:10])))
+    cmd = '/'.join(('statement', own, s.decode('ascii')))
+    return format_cmd(post, cmd)
+            
 def itob64(n):
     "utility to transform int to base64"
     c = hex(n)[2:]
@@ -366,17 +264,6 @@ def decrypt(d, n, raw):
     if len(c)%2: c = '0'+c
     aes2 = AES.new(bytes.fromhex(c), AES.MODE_ECB)
     return aes2.decrypt(cmsg)[:lmsg]
-
-def read_balance(owner, verbose, host='localhost'):
-    "_"
-    co = http.client.HTTPConnection(host)
-    ds = dbm.open('/u/sk')    
-    td = '%s' % datetime.datetime.now()
-    k = [b64toi(x) for x in ds[owner].split()]
-    s = sign(k[1], k[2], td[:10])
-    co.request('POST', '/bank', 'BAL("%s", %s, %s)' % (urllib.parse.quote(owner), verbose, s))
-    ds.close()
-    return co.getresponse().read().decode('utf-8')
 
 def buy(byr, ig, host='localhost'):
     "_"
@@ -522,53 +409,31 @@ class updf:
 
 if __name__ == '__main__':
     popu = {
-        'Pelinquin': 'fr167071927202809', 
-        'Alice':     'fr267070280099999', 
-        'Valérie':   'fr264070287098888', 
-        'Bob':       'fr161070280095555', 
-        'Carl⊔':     'fr177070284098888', 
+        'Pelinquin':        'fr167071927202809', 
+        'Laurent Fournier': 'fr167071927202809', 
+        'Alice':            'fr267070280099999', 
+        'Valérie':          'fr264070287098888', 
+        'Bob':              'fr161070280095555', 
+        'Carl⊔':            'fr177070284098888', 
         }
     
-    ds = dbm.open('/u/sk', 'c')
-    for a in popu:
-        if bytes(a,'utf-8') not in ds.keys():
-            print ('generate key for', a)
-            k = RSA.generate(4096, os.urandom)
-            ds[a] = bytes(' '.join([itob64(x).decode('ascii') for x in (k.e, k.d, k.n)]), 'ascii')
-    ds.close()
-
     #host = 'pi.pelinquin.fr'
-
-    #print (transaction('Alice',   'Bob', 1.65, host))
-    #print (transaction('Valérie', 'Carl⊔', 4.65, host))
-
-    #print (transaction('Bob',     'Daniel', 4.65, host))
-    #print (buy('Bob', 'toto您tata', host))
-    #print (read_balance('Daniel', False, host))
-    #print (transaction('Daniel', 'Valérie', 44.65, host))
-    #print (read_balance('Valérie', False, host))
-
-    man, ig, host = 'Pelinquin', 'toto您tata', 'localhost'
-    #print (register(man, popu[man], True,  'localhost'))
-    #print (register(man, popu[man], False, 'localhost'))
-    #print (register(man, popu[man], False, '192.168.1.24'))
-    print (register_ig(man, ig, 0.56, 100000, False, host))
-
-    man = 'Valérie'
-    #print (register(man, popu[man], True,  'localhost'))
-    #print (register(man, popu[man], False, 'localhost'))
-    #print (register(man, popu[man], False, '192.168.1.24'))
-
-    print (transaction('Pelinquin','Valérie', 2.15, False, host))
-    
-    #print('http://pi.pelinquin.fr/bank?' + urllib.parse.quote('reg/totoé/tata⊔/1.4'))
+    man, woman, ig, host = 'Laurent Fournier', 'Valérie', 'toto您tata', 'localhost'
+    print (register(man, popu[man], True,  host))
+    print (register('Alice', popu[man]))
+    print (register(woman))    
+    print (register('Bob'))    
+    print (transaction(man, woman, 2.15, False, host))
+    print (transaction(woman, man,  3.2, False, host))
+    print (transaction(woman, man,  2.2, False, host))
+    print (register_ig(man, ig, 0.56, 100000, False, host))    
+    print (statement(woman))    
 
     test, content = 'The Quick Brown\nFox Jumps Over\nThe Lazy Dog',[]
     page = [(10, 50, '50F1', 'F1 LaTeX\n'+ test),(10, 300, '50F2', 'F2 LaTeX\n'+test), (10, 550, '50F1', 'F3 LaTeX\n'+test)]
     content.append(page)
     #a = updf(595, 842)
     #open('toto.pdf', 'wb').write(a.gen(content))  
-
 
     sys.exit()
 
