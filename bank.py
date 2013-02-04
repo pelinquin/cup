@@ -22,7 +22,6 @@
 
 import re, os, sys, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools, subprocess
 #from Crypto.Cipher import AES
-#import kern
 
 __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf-8').read().encode('utf-8')).digest())[:5]
 
@@ -56,6 +55,20 @@ def log(s, ip=''):
     if not os.path.isfile(logf): open(logf, 'w', encoding='utf-8').write('%s|%s Log file Creation\n' % (now[:-7], ip) )     
     cont = open(logf, 'r', encoding='utf-8').read()
     open(logf, 'w', encoding='utf-8').write('%s|%s|%s\n%s' % (now[:-7], ip, s, cont))
+
+
+def pdf_receipt(td, byr, slr, prc, tr):
+    "_"
+    content = [[(100, 300, '32F1', 'Invoice'),
+                (50, 100, '50F1', 'Put any Ad here!'),
+                (420, 18, '12F1', td), 
+                (20, 400, '14F1', 'Buyer: \'%s\'' % byr), 
+                (20, 450, '14F1', 'Seller: \'%s\'' % slr), 
+                (480, 500, '12F1', 'Price: %s' % prc),
+                (10, 782, '10F1', 'Transaction: %s' % tr),
+                ]]
+    a = updf(595, 842)
+    return a.gen(content)
 
 def application(environ, start_response):
     "wsgi server app"
@@ -103,21 +116,21 @@ def application(environ, start_response):
                 d['NB_TR'] = '%d' % (int(d['NB_TR'])+1)
                 d[Ttr] = '/'.join((td, byr, slr, '%s' % prc)) 
                 o = 'Transaction OK from \'%s\' to \'%s\'' % (byr, slr)
+                o, mime = pdf_receipt(td[:19], byr, slr, prc, Ttr[2:].decode('ascii')), 'application/pdf'
             else:
                 o += 'transaction!'
         elif reg(re.match(r'^(state|statement|balance)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
             own, sig = reg.v.group(2), reg.v.group(3)
             Bow, Pow = b'B_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
             if verify(RSA_E, b64toi(d[Pow]), ' '.join((own, today[:10])), bytes(sig, 'ascii')):
-                o, a = '%s\towner: %s\t\t         balance: \t\t\t%9.2f ⊔\n' % (today[:19], own, float(d[Bow].decode('utf-8'))), []
+                o, a = '%s\towner: %s\t\t         balance: \t%9.2f⊔\n' % (today[:19], own, float(d[Bow].decode('utf-8'))), []
                 for x in d.keys():
                     if reg(re.match('T_(.*)$', x.decode('utf-8'))):
                         tab = d[x].decode('utf-8').split('/')
                         if own in (tab[1], tab[2]):
                             (t, tg) = ('\t', tab[2]) if own == tab[1] else ('\t'*3, tab[1])
-                            a.append('%s %s %25s%s%9.2f ⊔\n' % (tab[0][:19], x[2:].decode('utf-8'), tg, t, float(tab[3])))
-                b = sorted(a, reverse=True)
-                for x in b: o += x
+                            a.append('%s %s %25s%s%9.2f⊔\n' % (tab[0][:19], x[2:].decode('utf-8'), tg, t, float(tab[3])))
+                o += ''.join(sorted(a, reverse=True))
             else:
                 o += 'statement reading!'            
         elif way == 'get':
@@ -136,7 +149,7 @@ def application(environ, start_response):
         o += 'arg too long'
     d.close()
     start_response('200 OK', [('Content-type', mime)])
-    return [o.encode('utf-8')] 
+    return [o if mime == 'application/pdf' else o.encode('utf-8')] 
 
 def favicon():
     "_"
@@ -162,7 +175,7 @@ def frontpage(today):
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="90" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
     o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!">Beta</text>\n'
-    o += '<text class="alpha" font-size="64pt" x="50%" y="33%"><tspan title="and no \'html\' either!">No https, no html,</tspan><tspan x="50%" dy="100" title="only SVG and PDF!">no JavaScript,</tspan><tspan x="50%" dy="120" title="better privacy also!">better security!</tspan></text>\n'
+    o += '<text class="alpha" font-size="64pt" x="50%" y="33%"><tspan title="only http GET or POST!">No https, no html,</tspan><tspan x="50%" dy="100" title="only SVG and PDF!">no JavaScript,</tspan><tspan x="50%" dy="120" title="better privacy also!">better security!</tspan></text>\n'
     o += '<text class="foot" x="50%%" y="50" title="today">%s</text>\n' % today[:19]
     o += '<text class="foot" x="16%%" y="80%%" title="registered users">%04d users</text>\n' % nb
     o += '<text class="foot" x="38%%" y="80%%" title="">%06d transactions</text>\n' % tr
@@ -185,7 +198,18 @@ def format_cmd(post, cmd):
         co.request('GET', '/bank?' + urllib.parse.quote(cmd))
     return co.getresponse().read().decode('utf-8')    
 
-def register(owner, iduser='anonymous', post=False, host='localhost'):
+def format_pdf(post, cmd, f):
+    co = http.client.HTTPConnection(host)    
+    if post:
+        co.request('POST', '/bank', urllib.parse.quote(cmd))
+    else:
+        co.request('GET', '/bank?' + urllib.parse.quote(cmd))
+    res = co.getresponse().read()
+    #return res
+    open('%s.pdf' % f, 'wb').write(res)
+    return 'OK'
+
+def register(owner, iduser='anonymous', host='localhost', post=False):
     "_"
     td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')    
     ki, kb = [b64toi(x) for x in ds[owner].split()], [x for x in ds[owner].split()]
@@ -195,7 +219,7 @@ def register(owner, iduser='anonymous', post=False, host='localhost'):
     cmd = '/'.join(('reg', owner, iduser, kb[2].decode('ascii'), s.decode('ascii')))
     return format_cmd(post, cmd)
 
-def register_ig(owner, idig, p1, pf, post=False, host='localhost'):
+def register_ig(owner, idig, p1, pf, host='localhost', post=False):
     "_"
     td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
     ki = [b64toi(x) for x in ds[owner].split()]
@@ -204,16 +228,25 @@ def register_ig(owner, idig, p1, pf, post=False, host='localhost'):
     cmd = '/'.join(('ig', owner, idig, '%s' % p1, '%s' % pf, s.decode('ascii')))
     return format_cmd(post, cmd)    
 
-def transaction(byr, slr, prc, post=False, host='localhost'):
+def transaction(byr, slr, prc, host='localhost', post=False):
     "_"
     td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
     ki = [b64toi(x) for x in ds[byr].split()]
     ds.close()
     s = sign(ki[1], ki[2], ' '.join((byr, slr, '%s' % prc, td)))
     cmd = '/'.join(('transaction', byr, slr, '%s' % prc, td, s.decode('ascii')))
-    return format_cmd(post, cmd)
+    return format_pdf(post, cmd, 'tata')
 
-def statement(own, post=False, host='localhost'):
+def prep_transaction(byr, slr, prc, host='localhost', post=False):
+    "_"
+    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
+    ki = [b64toi(x) for x in ds[byr].split()]
+    ds.close()
+    s = sign(ki[1], ki[2], ' '.join((byr, slr, '%s' % prc, td)))
+    cmd = '/'.join(('transaction', byr, slr, '%s' % prc, td, s.decode('ascii')))
+    return 'http://%s/bank?%s' % (host, urllib.parse.quote(cmd))
+
+def statement(own, host='localhost', post=False):
     "_"
     td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
     ki = [b64toi(x) for x in ds[own].split()]
@@ -265,17 +298,6 @@ def decrypt(d, n, raw):
     aes2 = AES.new(bytes.fromhex(c), AES.MODE_ECB)
     return aes2.decrypt(cmsg)[:lmsg]
 
-def buy(byr, ig, host='localhost'):
-    "_"
-    co = http.client.HTTPConnection(host)
-    ds = dbm.open('/u/sk')    
-    td = bytes('%s' % datetime.datetime.now(), 'ascii')
-    k = [b64toi(x) for x in ds[byr].split()]
-    s = sign(k[1], k[2], '%s %s %s' %(byr, ig, td))
-    co.request('POST', '/bank', 'BUY("%s", "%s", %s, %s)' % (urllib.parse.quote(byr), urllib.parse.quote(ig), td, s))
-    ds.close()
-    return co.getresponse().read().decode('utf-8')
-
 class updf:
     def __init__(self, pagew, pageh, binary=True):
         self.pw = pagew
@@ -285,10 +307,9 @@ class updf:
         self.i = 0
         self.pos = []
         self.o = b'%PDF-1.4\n%'
-        #afmpath = pfbpath = '/usr/share/fonts/type1/gsfonts/' 
-        afmpath, pfbpath = '/home/laurent/afm/', '/home/laurent/pfb/'
-        self.afm = [kern.AFM(open(afmpath + '%s.afm' % f)) for f in __fonts__]
-        self.pfb = [open(pfbpath + '%s.pfb' % f, 'rb').read() for f in __embedded_fonts__]
+        fpath = '/cup/fonts/'
+        self.afm = [AFM(open(fpath + '%s.afm' % f)) for f in __fonts__]
+        self.pfb = [open(fpath + '%s.pfb' % f, 'rb').read() for f in __embedded_fonts__]
     
     def add(self, line):
         self.pos.append(len(self.o))
@@ -338,13 +359,14 @@ class updf:
         "stream parser"
         ff, other = par[2].split('F'), False
         o = '1 0 0 1 %s %s Tm /F%s %s Tf %s TL ' % (par[0]+self.mx, self.ph-par[1]-self.my, ff[1], ff[0], 1.2*int(ff[0]))
-        for m in re.compile(r'(/(\d+)F(\d+)\{([^\}]*)\}|([^\n/]+))').finditer(par[3]):
-            if m.group(5):
-                o += '%s[(%s)]TJ ' % ('T* ' if other else '', self.kern(m.group(5), self.afm[int(ff[1])-1])) 
-                other = True
-            if m.group(2) and m.group(4) and m.group(3):
-                other = False
-                o += '/F%s %s Tf [(%s)]TJ /F%s %s Tf ' % (m.group(3), m.group(2), self.kern(m.group(4), self.afm[int(ff[1])-1]), ff[1], ff[0])
+        o += '(%s)Tj ' % par[3]
+        #for m in re.compile(r'(/(\d+)F(\d+)\{([^\}]*)\}|([^\n/]+))').finditer(par[3]):
+        #    if m.group(5):
+        #        o += '%s[(%s)]TJ ' % ('T* ' if other else '', self.kern(m.group(5), self.afm[int(ff[1])-1])) 
+        #        other = True
+        #    if m.group(2) and m.group(4) and m.group(3):
+        #        other = False
+        #        o += '/F%s %s Tf [(%s)]TJ /F%s %s Tf ' % (m.group(3), m.group(2), self.kern(m.group(4), self.afm[int(ff[1])-1]), ff[1], ff[0])
         return o
 
     def gen(self, document):
@@ -357,7 +379,7 @@ class updf:
             t = bytes('BT 1 w 0.9 0.9 0.9 RG %s %s %s %s re S 0 0 0 RG 0 Tc ' % (self.mx, self.my, self.pw-2*self.mx, self.ph-2*self.my), 'ascii')
             for par in page: t += bytes(self.sgen(par), 'ascii')
             t += b'ET\n'
-            t1 = bytes('/P <</MCID 0>> BDC BT 1 0 0 1 10 20 Tm /F1 12 Tf (HELLO)Tj ET EMC /Link <</MCID 1>> BDC BT 1 0 0 1 100 20 Tm /F1 16 Tf (With a link)Tj ET EMC', 'ascii')
+            #t1 = bytes('/P <</MCID 0>> BDC BT 1 0 0 1 10 20 Tm /F1 12 Tf (HELLO)Tj ET EMC /Link <</MCID 1>> BDC BT 1 0 0 1 100 20 Tm /F1 16 Tf (With a link)Tj ET EMC', 'ascii')
             self.adds(t)
             ref.append('%s 0 R' % self.i)
         for p, page in enumerate(document):
@@ -369,7 +391,10 @@ class updf:
             seenall.update(seen)
         fc, lc = 0, 255 
         for f in seenall:
+            #print (f, len(__fonts__)-3)
             if int(f) > len(__fonts__)-1:
+            #if int(f) > len(__fonts__)-3:
+                print (f)
                 self.addarray([self.afm[int(f)-1].w(i) for i in range(fc, lc+1)])
                 indice = int(f)-len(__fonts__)+2
                 self.adds3(self.pfb[int(f)-len(__fonts__)+2])
@@ -382,7 +407,8 @@ class updf:
                 self.addnull()
                 self.add('/Type/Font/Subtype/Type1/BaseFont/%s' % (__fonts__[int(f)-1]))
             h[f] = self.i
-        nba = ['www.google.com']
+        #nba = ['www.google.com']
+        nba = []
         for a in nba:
             #self.add('/Type/Annot/Subtype/Link/Border[16 16 1]/Rect[150 600 270 640]/Dest[10 0 R/Fit]')
             self.add('/Type/Annot/Subtype/Link/Border[16 16 1]/Rect[150 600 270 640]/A<</Type/Action/S/URI/URI(http://pelinquin/u?beamer)>> ')
@@ -392,20 +418,262 @@ class updf:
         pref = np + self.i + 1
         for p, page in enumerate(document):
             fo = functools.reduce(lambda y, i: y+'/F%s %d 0 R' % (i, h[i]), fref[p].split(), '')
-            self.add('/Type/Page/Parent %d 0 R/Contents %s/Annots[%d 0 R]/Resources<</Font<<%s>> >> ' % (pref, ref[p], aref, fo))
+            #self.add('/Type/Page/Parent %d 0 R/Contents %s/Annots[%d 0 R]/Resources<</Font<<%s>> >> ' % (pref, ref[p], aref, fo))
+            self.add('/Type/Page/Parent %d 0 R/Contents %s/Resources<</Font<<%s>> >> ' % (pref, ref[p], fo))
             kids += '%s 0 R ' % self.i
             if p == 1: firstp = self.i
         self.add('/Type/Pages/MediaBox[0 0 %s %s]/Count %d/Kids[%s]' % (self.pw, self.ph, np, kids[:-1]))
         pagesid = self.i
         self.add('/Type/Outlines/First %s 0 R/Last %s 0 R/Count 1' % (self.i+2, self.i+2))
         self.add('/Title (Document)/Parent %d 0 R/Dest [%d 0 R /Fit]' % (self.i, firstp)) 
-        self.add('/FS /URL /F (http://www.google.com)')
-        self.add('/URLS[%s 0 R]' % self.i)
+        #self.add('/FS /URL /F (http://www.google.com)')
+        #self.add('/URLS[%s 0 R]' % self.i)
         self.add('/Type/Catalog/Pages %d 0 R/Outlines %d 0 R/Names %d 0 R' % (pagesid, self.i-3, self.i))  
         n, size = len(self.pos), len(self.o)
         self.o += functools.reduce(lambda y, i: y+bytes('%010d 00000 n \n' % i, 'ascii'), self.pos, bytes('xref\n0 %d\n0000000000 65535 f \n' % (n+1), 'ascii'))
         self.o += bytes('trailer<</Size %d/Root %d 0 R>>startxref %s\n' % (n+1, self.i, size), 'ascii') + b'%%EOF'
         return self.o
+
+## AFM PARSING
+
+def _to_int(x):
+    return int(float(x))
+
+def _to_str(x):
+    return x.decode('utf8')
+
+def _to_list_of_ints(s):
+    s = s.replace(b',', b' ')
+    return [_to_int(val) for val in s.split()]
+
+def _to_list_of_floats(s):
+    return [float(val) for val in s.split()]
+
+def _to_bool(s):
+    if s.lower().strip() in (b'false', b'0', b'no'): return False
+    else: return True
+
+def _sanity_check(fh):
+    """Check if the file at least looks like AFM. If not, raise :exc:`RuntimeError`."""
+    pos = fh.tell()
+    try:
+        line = bytes(fh.readline(), 'ascii')
+    finally:
+        fh.seek(pos, 0)
+    # AFM spec, Section 4: The StartFontMetrics keyword [followed by a version number] must be the first line in the file, and the
+    # EndFontMetrics keyword must be the last non-empty line in the file. We just check the first line.
+    if not line.startswith(b'StartFontMetrics'): raise RuntimeError('Not an AFM file')
+
+def _parse_header(fh):
+    """Reads the font metrics header (up to the char metrics) and returns
+    a dictionary mapping *key* to *val*.  *val* will be converted to the
+    appropriate python type as necessary; eg:
+        * 'False'->False
+        * '0'->0
+        * '-168 -218 1000 898'-> [-168, -218, 1000, 898]
+    Dictionary keys are
+      StartFontMetrics, FontName, FullName, FamilyName, Weight,ItalicAngle, IsFixedPitch, FontBBox, UnderlinePosition, UnderlineThickness, Version, Notice, EncodingScheme, CapHeight, XHeight, Ascender, Descender, StartCharMetrics"""
+    headerConverters = {
+        b'StartFontMetrics': float,
+        b'FontName': _to_str,
+        b'FullName': _to_str,
+        b'FamilyName': _to_str,
+        b'Weight': _to_str,
+        b'ItalicAngle': float,
+        b'IsFixedPitch': _to_bool,
+        b'FontBBox': _to_list_of_ints,
+        b'UnderlinePosition': _to_int,
+        b'UnderlineThickness': _to_int,
+        b'Version': _to_str,
+        b'Notice': _to_str,
+        b'EncodingScheme': _to_str,
+        b'CapHeight': float, # Is the second version a mistake, or
+        b'Capheight': float, # do some AFM files contain 'Capheight'? -JKS
+        b'XHeight': float,
+        b'Ascender': float,
+        b'Descender': float,
+        b'StdHW': float,
+        b'StdVW': float,
+        b'StartCharMetrics': _to_int,
+        b'CharacterSet': _to_str,
+        b'Characters': _to_int,
+        }
+    d = {}
+    while 1:
+        line = bytes(fh.readline(), 'ascii')
+        if not line: break
+        line = line.rstrip()
+        if line.startswith(b'Comment'): continue
+        lst = line.split(b' ', 1 )
+        key = lst[0]
+        if len( lst ) == 2:
+            val = lst[1]
+        else:
+            val = b''
+        #key, val = line.split(' ', 1)
+        try: d[key] = headerConverters[key](val)
+        except ValueError:
+            continue
+        except KeyError:
+            continue
+        if key==b'StartCharMetrics': return d
+    raise RuntimeError('Bad parse')
+
+def _parse_char_metrics(fh):
+    """Return a character metric dictionary.  Keys are the ASCII num of
+    the character, values are a (*wx*, *name*, *bbox*) tuple, where
+    *wx* is the character width, *name* is the postscript language
+    name, and *bbox* is a (*llx*, *lly*, *urx*, *ury*) tuple.
+    This function is incomplete per the standard, but thus far parses all the sample afm files tried."""
+    ascii_d = {}
+    name_d  = {}
+    while 1:
+        line = bytes(fh.readline(), 'ascii')
+        if not line: break
+        line = line.rstrip()
+        if line.startswith(b'EndCharMetrics'): return ascii_d, name_d
+        vals = line.split(b';')[:4]
+        if len(vals) !=4 : raise RuntimeError('Bad char metrics line: %s' % line)
+        num = _to_int(vals[0].split()[1])
+        wx = float(vals[1].split()[1])
+        name = vals[2].split()[1]
+        name = name.decode('ascii')
+        bbox = _to_list_of_floats(vals[3][2:])
+        bbox = list(map(int, bbox))
+        # Workaround: If the character name is 'Euro', give it the corresponding
+        # character code, according to WinAnsiEncoding (see PDF Reference).
+        if name == 'Euro':
+            num = 128
+        if num != -1:
+            ascii_d[num] = (wx, name, bbox)
+        name_d[name] = (wx, bbox)
+    raise RuntimeError('Bad parse')
+
+def _parse_kern_pairs(fh):
+    """Return a kern pairs dictionary; keys are (*char1*, *char2*) tuples and values are the kern pair value.  For example, a kern pairs line like
+    ``KPX A y -50`` will be represented as:: d[ ('A', 'y') ] = -50"""
+    line = bytes(fh.readline(), 'ascii')
+    if not line.startswith(b'StartKernPairs'): raise RuntimeError('Bad start of kern pairs data: %s'%line)
+    d = {}
+    while 1:
+        line = bytes(fh.readline(), 'ascii')
+        if not line: break
+        line = line.rstrip()
+        if len(line)==0: continue
+        if line.startswith(b'EndKernPairs'):
+            fh.readline()  # EndKernData
+            return d
+        vals = line.split()
+        if len(vals)!=4 or vals[0]!=b'KPX':
+            raise RuntimeError('Bad kern pairs line: %s'%line)
+        c1, c2, val = _to_str(vals[1]), _to_str(vals[2]), float(vals[3])
+        d[(c1,c2)] = val
+    raise RuntimeError('Bad kern pairs parse')
+
+def _parse_composites(fh):
+    """Return a composites dictionary.  Keys are the names of the
+    composites.  Values are a num parts list of composite information,
+    with each element being a (*name*, *dx*, *dy*) tuple.  Thus a
+    composites line reading: CC Aacute 2 ; PCC A 0 0 ; PCC acute 160 170 ;
+    will be represented as:: d['Aacute'] = [ ('A', 0, 0), ('acute', 160, 170) ]"""
+    d = {}
+    while 1:
+        line = fh.readline()
+        if not line: break
+        line = line.rstrip()
+        if len(line)==0: continue
+        if line.startswith(b'EndComposites'):
+            return d
+        vals = line.split(b';')
+        cc = vals[0].split()
+        name, numParts = cc[1], _to_int(cc[2])
+        pccParts = []
+        for s in vals[1:-1]:
+            pcc = s.split()
+            name, dx, dy = pcc[1], float(pcc[2]), float(pcc[3])
+            pccParts.append( (name, dx, dy) )
+        d[name] = pccParts
+    raise RuntimeError('Bad composites parse')
+
+def _parse_optional(fh):
+    """Parse the optional fields for kern pair data and composites
+    return value is a (*kernDict*, *compositeDict*) which are the
+    return values from :func:`_parse_kern_pairs`, and
+    :func:`_parse_composites` if the data exists, or empty dicts
+    otherwise"""
+    optional = { b'StartKernData' : _parse_kern_pairs, b'StartComposites' :  _parse_composites}
+    d = {b'StartKernData':{}, b'StartComposites':{}}
+    while 1:
+        line = bytes(fh.readline(), 'ascii')
+        if not line: break
+        line = line.rstrip()
+        if len(line)==0: continue
+        key = line.split()[0]
+        if key in optional: d[key] = optional[key](fh)
+    l = ( d[b'StartKernData'], d[b'StartComposites'] )
+    return l
+
+def parse_afm(fh):
+    """Parse the Adobe Font Metics file in file handle *fh*. Return value is a (*dhead*, *dcmetrics*, *dkernpairs*, *dcomposite*) tuple where
+    *dhead* is a :func:`_parse_header` dict, *dcmetrics* is a
+    :func:`_parse_composites` dict, *dkernpairs* is a
+    :func:`_parse_kern_pairs` dict (possibly {}), and *dcomposite* is a
+    :func:`_parse_composites` dict (possibly {}) """
+    _sanity_check(fh)
+    dhead =  _parse_header(fh)
+    dcmetrics_ascii, dcmetrics_name = _parse_char_metrics(fh)
+    doptional = _parse_optional(fh)
+    return dhead, dcmetrics_ascii, dcmetrics_name, doptional[0], doptional[1]
+
+class AFM:
+
+    def __init__(self, fh):
+        """Parse the AFM file in file object *fh*"""
+        (dhead, dcmetrics_ascii, dcmetrics_name, dkernpairs, dcomposite) = parse_afm(fh)
+        self._header = dhead
+        self._kern = dkernpairs
+        self._metrics = dcmetrics_ascii
+        self._metrics_by_name = dcmetrics_name
+        self._composite = dcomposite
+
+    def stw(self, s):
+        """ Return the string width (including kerning) """
+        totalw = 0
+        namelast = None
+        for c in s:
+            wx, name, bbox = self._metrics[ord(c)]
+            l,b,w,h = bbox
+            try: kp = self._kern[ (namelast, name) ]
+            except KeyError: kp = 0
+            totalw += wx + kp
+            namelast = name
+        return totalw 
+
+    def w(self, c):
+        """ Return the string width (including kerning) """
+        try: w = self._metrics[c][0]
+        except KeyError: w = 0
+        return w
+
+    def k0(self, s):
+        """ Return PDF kerning string """
+        o, l = '(', None
+        for c in s + ' ':
+            try: kp = - self._kern[(l, c)]
+            except KeyError: kp = 0
+            if l: o += '%s)%d(' % (l, kp) if kp else l
+            l = c
+        return o + ')'
+
+    def k(self, s):
+        """ Return PDF kerning string """
+        o, l = '', None
+        for c in s + ' ':
+            try: kp = - self._kern[(l, c)]
+            except KeyError: kp = 0
+            if l: o += '%s)%d(' % (l, kp) if kp else l
+            l = c
+        return o 
 
 if __name__ == '__main__':
     popu = {
@@ -417,23 +685,25 @@ if __name__ == '__main__':
         'Carl⊔':            'fr177070284098888', 
         }
     
-    #host = 'pi.pelinquin.fr'
     man, woman, ig, host = 'Laurent Fournier', 'Valérie', 'toto您tata', 'localhost'
-    print (register(man, popu[man], True,  host))
-    print (register('Alice', popu[man]))
-    print (register(woman))    
-    print (register('Bob'))    
-    print (transaction(man, woman, 2.15, False, host))
-    print (transaction(woman, man,  3.2, False, host))
-    print (transaction(woman, man,  2.2, False, host))
-    print (register_ig(man, ig, 0.56, 100000, False, host))    
-    print (statement(woman))    
+    #host = 'pi.pelinquin.fr'
+    #print (register(man, popu[man], host))
+    print (register('Alice', 'anonymous', host))
+    #print (register(woman, 'anonymous', host))    
+    print (register('Bob', 'anonymous', host))    
+    #print (transaction(man, woman, 2.15, host))
+    print (prep_transaction(man, 'Alice', 2.15, host))
+    #print (transaction(woman, man,  3.2, host))
+    #print (transaction(woman, man,  2.2, host))
+    #print (register_ig(man, ig, 0.56, 100000, host))    
+    #print (statement(woman), host)    
 
     test, content = 'The Quick Brown\nFox Jumps Over\nThe Lazy Dog',[]
-    page = [(10, 50, '50F1', 'F1 LaTeX\n'+ test),(10, 300, '50F2', 'F2 LaTeX\n'+test), (10, 550, '50F1', 'F3 LaTeX\n'+test)]
+    #page = [(10, 50, '50F1', 'F1 LaTeX\n'+ test),(10, 300, '50F2', 'F2 LaTeX\n'+test), (10, 550, '50F1', 'F3 LaTeX\n'+test)]
+    page = [(10, 50, '30F1', 'LaTeX\n'), (10, 100, '20F2', 'LaTeX\n')]
     content.append(page)
-    #a = updf(595, 842)
-    #open('toto.pdf', 'wb').write(a.gen(content))  
+    a = updf(595, 842)
+    open('toto.pdf', 'wb').write(a.gen(content))  
 
     sys.exit()
 
