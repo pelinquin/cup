@@ -21,7 +21,7 @@
 "_"
 
 import re, os, sys, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools, subprocess
-#from Crypto.Cipher import AES
+from Crypto.Cipher import AES
 
 __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf8').read().encode('utf8')).digest())[:5]
 
@@ -81,7 +81,7 @@ def application(environ, start_response):
     log(raw[:10] + '...', environ['REMOTE_ADDR'])
     d = dbm.open(db[:-3], 'c')
     if len(raw) < MAX_ARG_SIZE:
-        if reg(re.match(r'^(reg|register)/([^/]{3,50})/([^/]{9,17})/([^/]{680,685})/([^/]{680,685})$', raw, re.U)):
+        if reg(re.match(r'^(reg|register)/([^/]{3,50})/([^/]{9,17})/([^/]{680,685})/([^/]{680,685})$', raw, re.U)): # register()
             # checks both id and public key not already used and local id is valid
             own, uid, pbk, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
             Por, Bor, Oor, Uid = b'P_' + bytes(own, 'utf8'), b'B_' + bytes(own, 'utf8'), b'O_' + bytes(own, 'utf8'), b'U_' + bytes(uid, 'utf8')
@@ -94,17 +94,22 @@ def application(environ, start_response):
                 d[Por], d[Bor], d[Uid], o = pbk, '0', own, 'Public key id registration OK for \'%s\'' % own 
             else:
                 o += ' something wrong in user registration!'
-        elif reg(re.match(r'^(ig|immaterial|good)/([^/]{3,50})/([^/]{3,80})/([^/]{1,12})/([^/]{1,12})/([^/]{680,685})$', raw, re.U)):
+        elif reg(re.match(r'^(ig|immaterial|good)/([^/]{3,50})/([^/]{3,80})/([^/]{1,12})/([^/]{1,12})/([^/]{680,685})$', raw, re.U)): #ig()
             # checks
             own, iid, p1, pf, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6)
             Iig, Ppk = b'I_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf8')
             if Iig in d.keys():
                 o += 'IG id already set!' 
             elif verify(RSA_E, b64toi(d[Ppk]), ' '.join((today[:10], own, iid, p1, pf)), bytes(sig, 'ascii')):
-                d[Iig], o = '/'.join((today[:10], p1, pf, own)), 'IG id registration OK from \'%s\'' % own
+                ra = os.urandom(16)
+                akey = itob64(int(binascii.hexlify(os.urandom(16)), 16))
+                era = encrypt(RSA_E, b64toi(d[Ppk]), akey)
+                d[Iig] = '/'.join((today[:10], p1, pf, own, akey.decode('ascii')))
+                #o = 'IG id registration OK from \'%s\'' % own
+                o, mime = era, 'application/pdf'
             else:
                 o += 'ig registration fail!'
-        elif reg(re.match(r'^(tr|trans|transaction)/([^/]{3,50})/([^/]{3,50})/([^/]{1,12})/([^/]{26})/([^/]{680,685})$', raw, re.U)):
+        elif reg(re.match(r'^(tr|trans|transaction)/([^/]{3,50})/([^/]{3,50})/([^/]{1,12})/([^/]{26})/([^/]{680,685})$', raw, re.U)): # tr()
             # checks that price is positive, transaction not replicated, and that account is funded
             byr, slr, prc, td, sig = reg.v.group(2), reg.v.group(3), float(reg.v.group(4)), reg.v.group(5), reg.v.group(6)
             Bby, Bsr, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'B_' + bytes(slr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'ascii'), 
@@ -118,7 +123,7 @@ def application(environ, start_response):
                 o, mime = pdf_receipt(td[:19], bytes(byr,'utf8'), bytes(slr,'utf8'), prc, Ttr[2:].decode('ascii')), 'application/pdf'
             else:
                 o += 'transaction!'
-        elif reg(re.match(r'^(buy)/([^/]{3,50})/([^/]{3,80})/([^/]{26})/([^/]{680,685})$', raw, re.U)):
+        elif reg(re.match(r'^(buy)/([^/]{3,50})/([^/]{3,80})/([^/]{26})/([^/]{680,685})$', raw, re.U)): # buy()
             # checks 
             byr, ig, td, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
             Bby, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'ascii'), 
@@ -126,10 +131,17 @@ def application(environ, start_response):
             if verify(RSA_E, b64toi(d[Pby]), ' '.join((byr, ig, td)), bytes(sig, 'ascii')) and Iig in d.keys():
                 tab = d[Iig].decode('utf8').split('/')
                 prc, slr = float(tab[1]), tab[3]
-                o = 'bought ig OK from %s at price %f' % (slr, prc)
+                #o = 'bought ig OK from %s at price %f' % (slr, prc)
+                sra = bytes(tab[4], 'ascii')
+                era = encrypt(RSA_E, b64toi(d[Pby]), sra)
+                o, mime = era, 'application/pdf'
             else:
-                o += 'ig transaction!'
-        elif reg(re.match(r'^(receipt)/([^/]{10,100})$', raw, re.U)):
+                o += 'ig buy!'
+        elif reg(re.match(r'^(download)/([^/]{3,50})/([^/]+)/([^/]{680,685})$', raw, re.U)): 
+            # checks 
+            byr, era, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4)
+            o += 'download!'
+        elif reg(re.match(r'^(receipt)/([^/]{10,100})$', raw, re.U)): # receipt()
             tid = reg.v.group(2)
             Ttr = b'T_' + bytes(tid, 'ascii')
             if Ttr in d.keys():
@@ -137,7 +149,7 @@ def application(environ, start_response):
                 o, mime = pdf_receipt(today[:19], 'jhjhjghg', 'blable', '0', Ttr[2:].decode('ascii')), 'application/pdf'
             else:
                 o += 'receipt not found!'
-        elif reg(re.match(r'^(state|statement|balance)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
+        elif reg(re.match(r'^(state|statement|balance)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)): # statement()
             own, sig = reg.v.group(2), reg.v.group(3)
             Bow, Pow = b'B_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
             if verify(RSA_E, b64toi(d[Pow]), ' '.join((own, today[:10])), bytes(sig, 'ascii')):
@@ -152,7 +164,7 @@ def application(environ, start_response):
             else:
                 o += 'statement reading!'            
         elif way == 'get':
-            if raw.lower() in ('source', 'src', 'download'):
+            if raw.lower() in ('source', 'src'):
                 o = open(__file__, 'r', encoding='utf8').read()
             elif raw.lower() in ('help', 'about'):
                 o = 'Welcome to ⊔net!\n\nHere is the Help in PDF format soon!'
@@ -227,6 +239,14 @@ def format_cmd(post, cmd):
         co.request('GET', '/bank?' + urllib.parse.quote(cmd))
     return co.getresponse().read().decode('utf8')    
 
+def format_cmd1(post, cmd):
+    co = http.client.HTTPConnection(host)    
+    if post:
+        co.request('POST', '/bank', urllib.parse.quote(cmd))
+    else:
+        co.request('GET', '/bank?' + urllib.parse.quote(cmd))
+    return co.getresponse().read()    
+
 def format_pdf(post, cmd, f):
     co = http.client.HTTPConnection(host)    
     if post:
@@ -255,7 +275,8 @@ def register_ig(owner, idig, p1, pf, host='localhost', post=False):
     ds.close()
     s = sign(ki[1], ki[2], ' '.join((td[:10], owner, idig, '%s' % p1, '%s' % pf)))
     cmd = '/'.join(('ig', owner, idig, '%s' % p1, '%s' % pf, s.decode('ascii')))
-    return format_cmd(post, cmd)    
+    era = format_cmd1(post, cmd)
+    return decrypt(ki[1], ki[2], era)
 
 def transaction(byr, slr, prc, host='localhost', post=False):
     "_"
@@ -273,7 +294,18 @@ def buy(byr, ig, host='localhost', post=False):
     ds.close()
     s = sign(ki[1], ki[2], ' '.join((byr, ig, td)))
     cmd = '/'.join(('buy', byr, ig, td, s.decode('ascii')))
-    return format_cmd(post, cmd)
+    era = format_cmd1(post, cmd)
+    return decrypt(ki[1], ki[2], era)
+
+def download(byr, url, host='localhost', post=False):
+    "_"
+    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
+    ki = [b64toi(x) for x in ds[byr].split()]
+    ds.close()
+    era = encrypt(RSA_E, ki[2], url)
+    s = sign(ki[1], ki[2], ' '.join((byr, td[:10], '%s' % era[:20])))
+    cmd = '/'.join(('download', byr, '%s' % era, s.decode('ascii')))
+    return format_pdf(post, cmd, 'tata')
 
 def prep_transaction(byr, slr, prc, host='localhost', post=False):
     "_"
@@ -325,10 +357,8 @@ def encrypt(e, n, msg):
     "_"
     skey = os.urandom(16)
     iskey = int(binascii.hexlify(skey), 16)
-    print("KEY", len(skey), iskey)
     aes = AES.new(skey, AES.MODE_ECB)
     c, r = itob64(pow(iskey, e, n)), len(msg)
-    print ("CR", len(c), r)
     raw = bytes(((r)&0xff, (r>>8)&0xff, (r>>16)&0xff, (r>>24)&0xff, (len(c))&0xff, (len(c)>>8)&0xff))
     return raw + c + aes.encrypt(msg+b'\0'*(16-len(msg)%16))
 
@@ -733,19 +763,21 @@ if __name__ == '__main__':
     
     man, woman, ig, host = 'Laurent Fournier', 'Valérie', 'toto您tata', 'localhost'
     #host = 'pi.pelinquin.fr'
-    print (register(man, popu[man], host))
-    print (register('Alice', 'anonymous', host))
-    print (register(woman, 'anonymous', host))    
-    print (register('Bob', 'anonymous', host))    
-    print (transaction(man, woman, 2.15, host))
+    #print (register(man, popu[man], host))
+    #print (register('Alice', 'anonymous', host))
+    #print (register(woman, 'anonymous', host))    
+    #print (register('Bob', 'anonymous', host))    
+    #print (transaction(man, woman, 2.15, host))
     #print (prep_transaction(man, woman, 2.15, host))
     #print (prep_receipt('jHoUFfy4BuW283hsOpnZ', host))
-    print (transaction(woman, man,  3.2, host))
-    print (transaction(woman, man,  2.2, host))
-    print (register_ig(man, ig, 0.56, 100000, host))    
-    print (register_ig(woman, 'mon album', 1.5, 200000, host))    
-    print (buy(man, ig, host))
+    #print (transaction(woman, man,  3.2, host))
+    #print (transaction(woman, man,  2.2, host))
     #print (statement(woman), host)    
+    #print (register_ig(man, ig, 0.56, 100000, host))    
+    #print (register_ig(woman, 'mon album', 1.5, 200000, host))    
+    print (register_ig(man, 'encore39', 0.56, 100000, host))    
+    url = buy(woman, 'encore39', host)
+    download(woman, url)
 
     sys.exit()
 
