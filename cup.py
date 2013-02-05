@@ -329,6 +329,12 @@ def app_read(ig, environ, start_response):
     start_response('200 OK', [('Content-type', 'application/pdf')])
     return [cc] 
 
+def favicon():
+    "_"
+    code = '<svg xmlns="http://www.w3.org/2000/svg" n="%s"><path stroke-width="4" fill="none" stroke="Dodgerblue" d="M3,1L3,14L13,14L13,1"/></svg>' % (datetime.datetime.now())
+    tmp = base64.b64encode(code.encode('utf8'))
+    return '<link rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml;base64,%s"/>\n' % tmp.decode('utf8')
+
 def application(environ, start_response):
     """ WSGI Web application """
     query, mime, o, fname = urllib.parse.unquote(environ['QUERY_STRING']), 'text/html; charset=utf-8', 'Error!', 'toto'
@@ -352,8 +358,7 @@ def application(environ, start_response):
     if query == 'verify': return app_verify(environ, start_response)
     m = re.match(r'ig=(\w+)', query)
     if m: return app_read(bytes(m.group(1), 'ascii'), environ, start_response)
-    o = '<?xml version="1.0" encoding="utf-8"?>\n<html>\n' 
-    o += '<link rel="shortcut icon" type="image/png" href="favicon.png"/>\n'
+    o = '<?xml version="1.0" encoding="utf-8"?>\n<html>\n' + favicon()
     o += '<link href="http://fonts.googleapis.com/css?family=Schoolbell" rel="stylesheet" type="text/css"/>\n' 
     o += style() + script() + head()
     agents = {}

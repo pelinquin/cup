@@ -101,7 +101,7 @@ def application(environ, start_response):
             if Iig in d.keys():
                 o += 'IG id already set!' 
             elif verify(RSA_E, b64toi(d[Ppk]), ' '.join((today[:10], own, iid, p1, pf)), bytes(sig, 'ascii')):
-                d[Iig], o = '/'.join((today[:10], p1, pf)), 'IG id registration OK from \'%s\'' % own
+                d[Iig], o = '/'.join((today[:10], p1, pf, own)), 'IG id registration OK from \'%s\'' % own
             else:
                 o += 'ig registration fail!'
         elif reg(re.match(r'^(tr|trans|transaction)/([^/]{3,50})/([^/]{3,50})/([^/]{1,12})/([^/]{26})/([^/]{680,685})$', raw, re.U)):
@@ -118,6 +118,17 @@ def application(environ, start_response):
                 o, mime = pdf_receipt(td[:19], bytes(byr,'utf8'), bytes(slr,'utf8'), prc, Ttr[2:].decode('ascii')), 'application/pdf'
             else:
                 o += 'transaction!'
+        elif reg(re.match(r'^(buy)/([^/]{3,50})/([^/]{3,80})/([^/]{26})/([^/]{680,685})$', raw, re.U)):
+            # checks 
+            byr, ig, td, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
+            Bby, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'ascii'), 
+            Iig = b'I_' + bytes(ig, 'utf8')
+            if verify(RSA_E, b64toi(d[Pby]), ' '.join((byr, ig, td)), bytes(sig, 'ascii')) and Iig in d.keys():
+                tab = d[Iig].decode('utf8').split('/')
+                prc, slr = float(tab[1]), tab[3]
+                o = 'bought ig OK from %s at price %f' % (slr, prc)
+            else:
+                o += 'ig transaction!'
         elif reg(re.match(r'^(receipt)/([^/]{10,100})$', raw, re.U)):
             tid = reg.v.group(2)
             Ttr = b'T_' + bytes(tid, 'ascii')
@@ -155,7 +166,9 @@ def application(environ, start_response):
                 for x in d.keys():
                     if reg(re.match('I_(.*)$', x.decode('utf8'))):
                         tab = d[x].decode('utf8').split('/')
-                        o += '%s\t%s\t%7.2f⊔%9.2f\n' % (tab[0], x[2:].decode('ascii'), float(tab[1]), float(tab[2]))
+                        o += '%s\t%s\t%7.2f⊔%9.2f\n' % (tab[0], x[2:].decode('utf8'), float(tab[1]), float(tab[2]))
+            elif reg(re.match(r'^secret_url(.*)$', raw, re.U)):
+                o, mime = open('/cup/sample.pdf', 'rb').read(), 'application/pdf'
             else:
                 o, mime = frontpage(today, environ['REMOTE_ADDR']), 'application/xhtml+xml; charset=utf8'
     else:
@@ -166,7 +179,7 @@ def application(environ, start_response):
 
 def favicon():
     "_"
-    code = '<svg %s %s n="%s"><path stroke-width="4" fill="none" stroke="Dodgerblue" d="M3,1L3,14L13,14L13,1"/></svg>' % (_SVGNS, _XLINKNS, datetime.datetime.now())
+    code = '<svg %s n="%s"><path stroke-width="4" fill="none" stroke="Dodgerblue" d="M3,1L3,14L13,14L13,1"/></svg>' % (_SVGNS, datetime.datetime.now())
     tmp = base64.b64encode(code.encode('utf8'))
     return '<link xmlns="http://www.w3.org/1999/xhtml" rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml;base64,%s"/>\n' % tmp.decode('utf8')
 
@@ -252,6 +265,15 @@ def transaction(byr, slr, prc, host='localhost', post=False):
     s = sign(ki[1], ki[2], ' '.join((byr, slr, '%s' % prc, td)))
     cmd = '/'.join(('transaction', byr, slr, '%s' % prc, td, s.decode('ascii')))
     return format_pdf(post, cmd, 'tata')
+
+def buy(byr, ig, host='localhost', post=False):
+    "_"
+    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
+    ki = [b64toi(x) for x in ds[byr].split()]
+    ds.close()
+    s = sign(ki[1], ki[2], ' '.join((byr, ig, td)))
+    cmd = '/'.join(('buy', byr, ig, td, s.decode('ascii')))
+    return format_cmd(post, cmd)
 
 def prep_transaction(byr, slr, prc, host='localhost', post=False):
     "_"
@@ -399,8 +421,8 @@ class updf:
         ref, kids, seenall, fref, h, firstp = [], '', {}, [], {}, 0
         for p, page in enumerate(document):
             t = bytes('BT 1 w 0.9 0.9 0.9 RG %s %s %s %s re S 0 0 0 RG 0 Tc ' % (self.mx, self.my, self.pw-2*self.mx, self.ph-2*self.my), 'ascii')
-            t += b'1.0 1.0 1.0 RG 0.7 0.95 1.0 rg 44 600 505 190 re B 0.0 0.0 0.0 rg '
-            t += b'1.0 1.0 1.0 rg 1 0 0 1 60 680 Tm /F1 60 Tf (Put your Ad. here)Tj 0.0 0.0 0.0 rg '
+            t += b'1.0 1.0 1.0 RG 0.8 0.9 1.0 rg 44 600 505 190 re B 0.0 0.0 0.0 rg '
+            t += b'1.0 1.0 1.0 rg 1 0 0 1 60 680 Tm /F1 60 Tf (Put your Ads here)Tj 0.0 0.0 0.0 rg '
             for par in page: t += bytes(self.sgen(par), 'ascii')
             t += b'ET\n'
             #t1 = bytes('/P <</MCID 0>> BDC BT 1 0 0 1 10 20 Tm /F1 12 Tf (HELLO)Tj ET EMC /Link <</MCID 1>> BDC BT 1 0 0 1 100 20 Tm /F1 16 Tf (With a link)Tj ET EMC', 'ascii')
@@ -711,18 +733,18 @@ if __name__ == '__main__':
     
     man, woman, ig, host = 'Laurent Fournier', 'Valérie', 'toto您tata', 'localhost'
     #host = 'pi.pelinquin.fr'
-    #print (register(man, popu[man], host))
-    #print (register('Alice', 'anonymous', host))
-    #print (register(woman, 'anonymous', host))    
-    #print (register('Bob', 'anonymous', host))    
-    #print (transaction(man, woman, 2.15, host))
-
-    print (prep_transaction(man, woman, 2.15, host))
-    print (prep_receipt('jHoUFfy4BuW283hsOpnZ', host))
-    #print (transaction(woman, man,  3.2, host))
-    #print (transaction(woman, man,  2.2, host))
-    #print (register_ig(man, ig, 0.56, 100000, host))    
-    #print (register_ig(woman, 'mon album', 1.5, 200000, host))    
+    print (register(man, popu[man], host))
+    print (register('Alice', 'anonymous', host))
+    print (register(woman, 'anonymous', host))    
+    print (register('Bob', 'anonymous', host))    
+    print (transaction(man, woman, 2.15, host))
+    #print (prep_transaction(man, woman, 2.15, host))
+    #print (prep_receipt('jHoUFfy4BuW283hsOpnZ', host))
+    print (transaction(woman, man,  3.2, host))
+    print (transaction(woman, man,  2.2, host))
+    print (register_ig(man, ig, 0.56, 100000, host))    
+    print (register_ig(woman, 'mon album', 1.5, 200000, host))    
+    print (buy(man, ig, host))
     #print (statement(woman), host)    
 
     sys.exit()
