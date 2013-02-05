@@ -23,7 +23,7 @@
 import re, os, sys, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools, subprocess
 #from Crypto.Cipher import AES
 
-__digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf-8').read().encode('utf-8')).digest())[:5]
+__digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf8').read().encode('utf8')).digest())[:5]
 
 __embedded_fonts__ = ('cmr10', 'cmr17')
 __fonts__ = ('Helvetica', 'Times-Roman', 'Courier', 'Times-Bold', 'Helvetica-Bold', 'Courier-Bold', 'Times-Italic', 'Helvetica-Oblique', 
@@ -52,19 +52,19 @@ def init_db(db):
 def log(s, ip=''):
     "Append to head log file"
     logf, now = '/cup/log', '%s' % datetime.datetime.now()
-    if not os.path.isfile(logf): open(logf, 'w', encoding='utf-8').write('%s|%s Log file Creation\n' % (now[:-7], ip) )     
-    cont = open(logf, 'r', encoding='utf-8').read()
-    open(logf, 'w', encoding='utf-8').write('%s|%s|%s\n%s' % (now[:-7], ip, s, cont))
+    if not os.path.isfile(logf): open(logf, 'w', encoding='utf8').write('%s|%s Log file Creation\n' % (now[:-7], ip) )     
+    cont = open(logf, 'r', encoding='utf8').read()
+    open(logf, 'w', encoding='utf8').write('%s|%s|%s\n%s' % (now[:-7], ip, s, cont))
 
 
 def pdf_receipt(td, byr, slr, prc, tr):
     "_"
     content = [[(100, 300, '32F1', 'Invoice'),
-                (50, 100, '50F1', 'Put any Ad here!'),
                 (420, 18, '12F1', td), 
-                (20, 400, '14F1', 'Buyer: \'%s\'' % byr), 
-                (20, 450, '14F1', 'Seller: \'%s\'' % slr), 
-                (480, 500, '12F1', 'Price: %s' % prc),
+                (20, 400, '14F1', 'Buyer: %s' % byr), 
+                (20, 450, '14F1', 'Seller: %s' % slr), 
+                (20, 500, '14F1', 'Intangible Good: example'), 
+                (480, 600, '12F1', 'Price: %s' % prc),
                 (10, 782, '10F1', 'Transaction: %s' % tr),
                 ]]
     a = updf(595, 842)
@@ -72,10 +72,10 @@ def pdf_receipt(td, byr, slr, prc, tr):
 
 def application(environ, start_response):
     "wsgi server app"
-    mime, o, db, today = 'text/plain; charset=utf-8', 'Error:', '/cup/bank.db', '%s' % datetime.datetime.now()
+    mime, o, db, today = 'text/plain; charset=utf8', 'Error:', '/cup/bank.db', '%s' % datetime.datetime.now()
     init_db(db)
     if environ['REQUEST_METHOD'].lower() == 'post':
-        raw, way = urllib.parse.unquote(environ['wsgi.input'].read().decode('utf-8')), 'post'
+        raw, way = urllib.parse.unquote(environ['wsgi.input'].read().decode('utf8')), 'post'
     else:
         raw, way = urllib.parse.unquote(environ['QUERY_STRING']), 'get'
     log(raw[:10] + '...', environ['REMOTE_ADDR'])
@@ -97,17 +97,17 @@ def application(environ, start_response):
         elif reg(re.match(r'^(ig|immaterial|good)/([^/]{3,50})/([^/]{3,80})/([^/]{1,12})/([^/]{1,12})/([^/]{680,685})$', raw, re.U)):
             # checks
             own, iid, p1, pf, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6)
-            Iig, Ppk = b'I_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf-8')
+            Iig, Ppk = b'I_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf8')
             if Iig in d.keys():
                 o += 'IG id already set!' 
             elif verify(RSA_E, b64toi(d[Ppk]), ' '.join((today[:10], own, iid, p1, pf)), bytes(sig, 'ascii')):
-                d[Iig], o = ' '.join((p1, pf)), 'IG id registration OK from \'%s\'' % own
+                d[Iig], o = '/'.join((today[:10], p1, pf)), 'IG id registration OK from \'%s\'' % own
             else:
                 o += 'ig registration fail!'
         elif reg(re.match(r'^(tr|trans|transaction)/([^/]{3,50})/([^/]{3,50})/([^/]{1,12})/([^/]{26})/([^/]{680,685})$', raw, re.U)):
             # checks that price is positive, transaction not replicated, and that account is funded
             byr, slr, prc, td, sig = reg.v.group(2), reg.v.group(3), float(reg.v.group(4)), reg.v.group(5), reg.v.group(6)
-            Bby, Bsr, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'B_' + bytes(slr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'utf8'), 
+            Bby, Bsr, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'B_' + bytes(slr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'ascii'), 
             if (prc > 0) and \
                     not (Ttr in d.keys()) and \
                     verify(RSA_E, b64toi(d[Pby]), ' '.join((byr, slr, '%s' % prc, td)), bytes(sig, 'ascii')) and \
@@ -115,65 +115,78 @@ def application(environ, start_response):
                 d[Bby], d[Bsr] = '%f' % (float(d[Bby]) - prc), '%f' % (float(d[Bsr]) + prc)
                 d['NB_TR'] = '%d' % (int(d['NB_TR'])+1)
                 d[Ttr] = '/'.join((td, byr, slr, '%s' % prc)) 
-                o = 'Transaction OK from \'%s\' to \'%s\'' % (byr, slr)
-                o, mime = pdf_receipt(td[:19], byr, slr, prc, Ttr[2:].decode('ascii')), 'application/pdf'
+                o, mime = pdf_receipt(td[:19], bytes(byr,'utf8'), bytes(slr,'utf8'), prc, Ttr[2:].decode('ascii')), 'application/pdf'
             else:
                 o += 'transaction!'
+        elif reg(re.match(r'^(receipt)/([^/]{10,100})$', raw, re.U)):
+            tid = reg.v.group(2)
+            Ttr = b'T_' + bytes(tid, 'ascii')
+            if Ttr in d.keys():
+                #o, mime = pdf_receipt(td[:19], bytes(byr,'utf8'), bytes(slr,'utf8'), prc, Ttr[2:].decode('ascii')), 'application/pdf'
+                o, mime = pdf_receipt(today[:19], 'jhjhjghg', 'blable', '0', Ttr[2:].decode('ascii')), 'application/pdf'
+            else:
+                o += 'receipt not found!'
         elif reg(re.match(r'^(state|statement|balance)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
             own, sig = reg.v.group(2), reg.v.group(3)
             Bow, Pow = b'B_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
             if verify(RSA_E, b64toi(d[Pow]), ' '.join((own, today[:10])), bytes(sig, 'ascii')):
-                o, a = '%s\towner: %s\t\t         balance: \t%9.2f⊔\n' % (today[:19], own, float(d[Bow].decode('utf-8'))), []
+                o, a = '%s\towner: %s\t\t         balance: \t%9.2f⊔\n' % (today[:19], own, float(d[Bow].decode('ascii'))), []
                 for x in d.keys():
-                    if reg(re.match('T_(.*)$', x.decode('utf-8'))):
-                        tab = d[x].decode('utf-8').split('/')
+                    if reg(re.match('T_(.*)$', x.decode('ascii'))):
+                        tab = d[x].decode('utf8').split('/')
                         if own in (tab[1], tab[2]):
                             (t, tg) = ('\t', tab[2]) if own == tab[1] else ('\t'*3, tab[1])
-                            a.append('%s %s %25s%s%9.2f⊔\n' % (tab[0][:19], x[2:].decode('utf-8'), tg, t, float(tab[3])))
+                            a.append('%s %s %25s%s%9.2f⊔\n' % (tab[0][:19], x[2:].decode('ascii'), tg, t, float(tab[3])))
                 o += ''.join(sorted(a, reverse=True))
             else:
                 o += 'statement reading!'            
         elif way == 'get':
             if raw.lower() in ('source', 'src', 'download'):
-                o = open(__file__, 'r', encoding='utf-8').read()
+                o = open(__file__, 'r', encoding='utf8').read()
             elif raw.lower() in ('help', 'about'):
                 o = 'Welcome to ⊔net!\n\nHere is the Help in PDF format soon!'
             elif raw.lower() == 'reset':
                 subprocess.Popen(('rm', '/cup/bank.db')).communicate() # Of course this is temporary available for testing!
                 o = 'RESET DATABASE OK!'
             elif raw.lower() in ('log',):
-                o = open('/cup/log', 'r', encoding='utf-8').read()                
+                o = open('/cup/log', 'r', encoding='utf8').read()                
+            elif raw.lower() in ('list',):
+                o = ''
+                for x in d.keys():
+                    if reg(re.match('I_(.*)$', x.decode('utf8'))):
+                        tab = d[x].decode('utf8').split('/')
+                        o += '%s\t%s\t%7.2f⊔%9.2f\n' % (tab[0], x[2:].decode('ascii'), float(tab[1]), float(tab[2]))
             else:
-                o, mime = frontpage(today), 'application/xhtml+xml; charset=utf-8'
+                o, mime = frontpage(today, environ['REMOTE_ADDR']), 'application/xhtml+xml; charset=utf8'
     else:
         o += 'arg too long'
     d.close()
     start_response('200 OK', [('Content-type', mime)])
-    return [o if mime == 'application/pdf' else o.encode('utf-8')] 
+    return [o if mime == 'application/pdf' else o.encode('utf8')] 
 
 def favicon():
     "_"
-    code = '<svg %s n="%s"><path stroke-width="4" fill="none" stroke="Dodgerblue" d="M3,1L3,14L13,14L13,1"/></svg>' % (_SVGNS, datetime.datetime.now())
-    tmp = base64.b64encode(code.encode('utf-8'))
-    return '<link rel="shortcut icon" type="image/svg+xml" xlink:href="data:image/svg+xml;base64,%s"/>\n' % tmp.decode('utf-8')
+    code = '<svg %s %s n="%s"><path stroke-width="4" fill="none" stroke="Dodgerblue" d="M3,1L3,14L13,14L13,1"/></svg>' % (_SVGNS, _XLINKNS, datetime.datetime.now())
+    tmp = base64.b64encode(code.encode('utf8'))
+    return '<link xmlns="http://www.w3.org/1999/xhtml" rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml;base64,%s"/>\n' % tmp.decode('utf8')
 
-def frontpage(today):
+def frontpage(today, ip):
     "not in html!"
     d = dbm.open('/cup/bank')
     nb, su, ck , tr, di, ni = 0, 0, 0, int(d['NB_TR']), d['__DIGEST__'], 0
     for x in d.keys():
-        if reg(re.match('B_(.*)$', x.decode('utf-8'))):
+        if reg(re.match('B_(.*)$', x.decode('utf8'))):
             nb += 1
             su += abs(float(d[x])/2)
             ck += float(d[x])
-        if reg(re.match('I_', x.decode('utf-8'))):
+        if reg(re.match('I_', x.decode('utf8'))):
             ni += 1
     d.close()
-    o = '<?xml version="1.0" encoding="utf-8"?>\n' 
+    o = '<?xml version="1.0" encoding="utf8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
     o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
-    o += '<text x="90" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
+    o += '<text x="80" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
     o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!">Beta</text>\n'
     o += '<text class="alpha" font-size="64pt" x="50%" y="33%"><tspan title="only http GET or POST!">No https, no html,</tspan><tspan x="50%" dy="100" title="only SVG and PDF!">no JavaScript,</tspan><tspan x="50%" dy="120" title="better privacy also!">better security!</tspan></text>\n'
     o += '<text class="foot" x="50%%" y="50" title="today">%s</text>\n' % today[:19]
@@ -182,11 +195,14 @@ def frontpage(today):
     o += '<text class="foot" x="62%%" y="80%%" title="number of registered Intangible Goods">%04d IGs</text>\n' % ni
     o += '<text class="foot" x="84%%" y="80%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % su
     o += '<a xlink:href="bank?src" ><text class="note" x="160" y="98%" title="on GitHub (https://github.com/pelinquin/cup) hack it, share it!">Download the source code!</text></a>\n'
+    if ip == '127.0.0.1': 
+        o += '<text class="note" x="160" y="90"  title="my ip adress">local server</text>\n'
+    o += '<a xlink:href="bank?help"><text class="note" x="99%" y="20"  title="help">Help</text></a>\n'
     o += '<a xlink:href="u?pi"     ><text class="note" x="99%" y="40"  title="at home!">Host</text></a>\n'            
     o += '<a xlink:href="bank?log" ><text class="note" x="99%" y="60"  title="log file">Log</text></a>\n'
-    o += '<a xlink:href="bank?help"><text class="note" x="99%" y="20"  title="help">Help</text></a>\n'
+    o += '<a xlink:href="bank?list"><text class="note" x="99%" y="80"  title="ig list">List</text></a>\n'
     o += '<text class="note" x="50%%" y="98%%" title="you can use that server!">Status: <tspan fill="%s</tspan></text>\n' % ('green">OK' if (abs(ck) <= 0.00001) else 'red">Error!')
-    o += '<text class="note" x="99%%" y="95%%" title="database|program" >Digest: %s|%s</text>\n' % (di.decode('utf-8'), __digest__.decode('utf-8'))
+    o += '<text class="note" x="99%%" y="95%%" title="database|program" >Digest: %s|%s</text>\n' % (di.decode('utf8'), __digest__.decode('utf8'))
     o += '<text class="note" x="99%%" y="98%%" title="or visit \'%s\'">Contact: %s</text>\n' % (__url__, __email__) 
     return o + '</svg>'
 
@@ -196,7 +212,7 @@ def format_cmd(post, cmd):
         co.request('POST', '/bank', urllib.parse.quote(cmd))
     else:
         co.request('GET', '/bank?' + urllib.parse.quote(cmd))
-    return co.getresponse().read().decode('utf-8')    
+    return co.getresponse().read().decode('utf8')    
 
 def format_pdf(post, cmd, f):
     co = http.client.HTTPConnection(host)    
@@ -246,6 +262,11 @@ def prep_transaction(byr, slr, prc, host='localhost', post=False):
     cmd = '/'.join(('transaction', byr, slr, '%s' % prc, td, s.decode('ascii')))
     return 'http://%s/bank?%s' % (host, urllib.parse.quote(cmd))
 
+def prep_receipt(tid, host='localhost', post=False):
+    "_"
+    cmd = '/'.join(('receipt', tid))
+    return 'http://%s/bank?%s' % (host, urllib.parse.quote(cmd))
+
 def statement(own, host='localhost', post=False):
     "_"
     td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
@@ -268,7 +289,7 @@ def b64toi(c):
 
 def H(*tab):
     "hash"
-    return int(hashlib.sha1(b''.join(bytes('%s' % i, 'utf-8') for i in tab)).hexdigest(), 16)
+    return int(hashlib.sha1(b''.join(bytes('%s' % i, 'utf8') for i in tab)).hexdigest(), 16)
  
 def sign(d, n, msg):
     "_"
@@ -360,6 +381,7 @@ class updf:
         ff, other = par[2].split('F'), False
         o = '1 0 0 1 %s %s Tm /F%s %s Tf %s TL ' % (par[0]+self.mx, self.ph-par[1]-self.my, ff[1], ff[0], 1.2*int(ff[0]))
         o += '(%s)Tj ' % par[3]
+        
         #for m in re.compile(r'(/(\d+)F(\d+)\{([^\}]*)\}|([^\n/]+))').finditer(par[3]):
         #    if m.group(5):
         #        o += '%s[(%s)]TJ ' % ('T* ' if other else '', self.kern(m.group(5), self.afm[int(ff[1])-1])) 
@@ -377,6 +399,8 @@ class updf:
         ref, kids, seenall, fref, h, firstp = [], '', {}, [], {}, 0
         for p, page in enumerate(document):
             t = bytes('BT 1 w 0.9 0.9 0.9 RG %s %s %s %s re S 0 0 0 RG 0 Tc ' % (self.mx, self.my, self.pw-2*self.mx, self.ph-2*self.my), 'ascii')
+            t += b'1.0 1.0 1.0 RG 0.7 0.95 1.0 rg 44 600 505 190 re B 0.0 0.0 0.0 rg '
+            t += b'1.0 1.0 1.0 rg 1 0 0 1 60 680 Tm /F1 60 Tf (Put your Ad. here)Tj 0.0 0.0 0.0 rg '
             for par in page: t += bytes(self.sgen(par), 'ascii')
             t += b'ET\n'
             #t1 = bytes('/P <</MCID 0>> BDC BT 1 0 0 1 10 20 Tm /F1 12 Tf (HELLO)Tj ET EMC /Link <</MCID 1>> BDC BT 1 0 0 1 100 20 Tm /F1 16 Tf (With a link)Tj ET EMC', 'ascii')
@@ -688,22 +712,18 @@ if __name__ == '__main__':
     man, woman, ig, host = 'Laurent Fournier', 'Valérie', 'toto您tata', 'localhost'
     #host = 'pi.pelinquin.fr'
     #print (register(man, popu[man], host))
-    print (register('Alice', 'anonymous', host))
+    #print (register('Alice', 'anonymous', host))
     #print (register(woman, 'anonymous', host))    
-    print (register('Bob', 'anonymous', host))    
+    #print (register('Bob', 'anonymous', host))    
     #print (transaction(man, woman, 2.15, host))
-    print (prep_transaction(man, 'Alice', 2.15, host))
+
+    print (prep_transaction(man, woman, 2.15, host))
+    print (prep_receipt('jHoUFfy4BuW283hsOpnZ', host))
     #print (transaction(woman, man,  3.2, host))
     #print (transaction(woman, man,  2.2, host))
     #print (register_ig(man, ig, 0.56, 100000, host))    
+    #print (register_ig(woman, 'mon album', 1.5, 200000, host))    
     #print (statement(woman), host)    
-
-    test, content = 'The Quick Brown\nFox Jumps Over\nThe Lazy Dog',[]
-    #page = [(10, 50, '50F1', 'F1 LaTeX\n'+ test),(10, 300, '50F2', 'F2 LaTeX\n'+test), (10, 550, '50F1', 'F3 LaTeX\n'+test)]
-    page = [(10, 50, '30F1', 'LaTeX\n'), (10, 100, '20F2', 'LaTeX\n')]
-    content.append(page)
-    a = updf(595, 842)
-    open('toto.pdf', 'wb').write(a.gen(content))  
 
     sys.exit()
 
