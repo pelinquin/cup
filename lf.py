@@ -20,16 +20,20 @@
 #-----------------------------------------------------------------------------
 "_"
 
+__owner__ = 'Laurent Fournier'
+
 import re, os, sys, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools, subprocess
 from Crypto.Cipher import AES
 
 __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf8').read().encode('utf8')).digest())[:5]
+__user__ = os.path.basename(__file__)[:-3]
 
 __embedded_fonts__ = ('cmr10', 'cmr17')
 __fonts__ = ('Helvetica', 'Times-Roman', 'Courier', 'Times-Bold', 'Helvetica-Bold', 'Courier-Bold', 'Times-Italic', 'Helvetica-Oblique', 
              'Courier-Oblique', 'Times-BoldItalic', 'Helvetica-BoldOblique', 'Courier-BoldOblique', 'Symbol') + __embedded_fonts__
 
 __email__ = 'laurent.fournier@cupfoundation.net'
+
 __url__   = 'http://cupfoundation.net'
 
 _SVGNS    = 'xmlns="http://www.w3.org/2000/svg"'
@@ -46,166 +50,48 @@ def init_db(db):
     "_"
     if not os.path.isfile(db):
         d = dbm.open(db[:-3], 'c')
-        d['__DIGEST__'], d['NB_TR'] = __digest__, '0'
         d.close()
-
-def log(s, ip=''):
-    "Append to head log file"
-    logf, now = '/cup/log', '%s' % datetime.datetime.now()
-    if not os.path.isfile(logf): open(logf, 'w', encoding='utf8').write('%s|%s Log file Creation\n' % (now[:-7], ip) )     
-    cont = open(logf, 'r', encoding='utf8').read()
-    open(logf, 'w', encoding='utf8').write('%s|%s|%s\n%s' % (now[:-7], ip, s, cont))
-
-
-def pdf_receipt(td, byr, slr, prc, tr):
-    "_"
-    content = [[(100, 300, '32F1', 'Invoice'),
-                (420, 18, '12F1', td), 
-                (20, 400, '14F1', 'Buyer: %s' % byr), 
-                (20, 450, '14F1', 'Seller: %s' % slr), 
-                (20, 500, '14F1', 'Intangible Good: example'), 
-                (480, 600, '12F1', 'Price: %s' % prc),
-                (10, 782, '10F1', 'Transaction: %s' % tr),
-                ]]
-    a = updf(595, 842)
-    return a.gen(content)
+        os.chmod(db, 511)
 
 def application(environ, start_response):
     "wsgi server app"
-    mime, o, db, today = 'text/plain; charset=utf8', 'Error:', '/cup/bank.db', '%s' % datetime.datetime.now()
+    mime, o, db, today, fname = 'text/plain; charset=utf8', 'Error:', '/cup/%s/keys.db' % __user__, '%s' % datetime.datetime.now(), 'default.txt'
     init_db(db)
     if environ['REQUEST_METHOD'].lower() == 'post':
         raw, way = urllib.parse.unquote(environ['wsgi.input'].read().decode('utf8')), 'post'
     else:
         raw, way = urllib.parse.unquote(environ['QUERY_STRING']), 'get'
-    log(raw[:10] + '...', environ['REMOTE_ADDR'])
     d = dbm.open(db[:-3], 'c')
+    values = [d[k].decode('utf8') for k in d.keys()]
     if len(raw) < MAX_ARG_SIZE:
-        # register()
-        if reg(re.match(r'^(user|reg|register)/([^/]{3,50})/([^/]{9,17})/([^/]{680,685})/([^/]{680,685})$', raw, re.U)):
-            # checks both id and public key not already used and local id is valid
-            own, uid, pbk, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
-            Por, Bor, Oor, Uid = b'P_' + bytes(own, 'utf8'), b'B_' + bytes(own, 'utf8'), b'O_' + bytes(own, 'utf8'), b'U_' + bytes(uid, 'utf8')
-            if Por in d.keys():
-                o += 'public key already exists for %s !' % own 
-            elif (uid != 'anonymous') and (Uid in d.keys()):
-                o += 'user id already registered for %s !' % own 
-            elif verify(RSA_E, b64toi(bytes(pbk, 'ascii')), ' '.join((today[:10], own, uid)), bytes(sig, 'ascii')):
-                d[Oor] = '100' if uid != 'anonymous' and uid[:2] == 'fr' and int(uid[-2:]) == (97 - int(uid[2:-2])%97) else '0' # french id!
-                d[Por], d[Bor], d[Uid], o = pbk, '0', own, 'Public key id registration OK for \'%s\'' % own 
-            else:
-                o += ' something wrong in user registration!'
-        # igreg()
-        elif reg(re.match(r'^(ig|igreg|immaterial|good)/([^/]{3,50})/([^/]{3,80})/([^/]{1,12})/([^/]{1,12})/([^/]{680,685})$', raw, re.U)): 
-            # checks
-            own, iid, p1, pf, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6)
-            Iig, Ppk = b'I_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf8')
-            if Iig in d.keys():
-                o += 'IG id already set!' 
-            elif verify(RSA_E, b64toi(d[Ppk]), ' '.join((today[:10], own, iid, p1, pf)), bytes(sig, 'ascii')):
-                ra = os.urandom(16)
-                akey = itob64(int(binascii.hexlify(os.urandom(16)), 16))
-                era = encrypt(RSA_E, b64toi(d[Ppk]), akey)
-                d[Iig] = '/'.join((today[:10], p1, pf, own, akey.decode('ascii')))
-                #o = 'IG id registration OK from \'%s\'' % own
-                o, mime = era, 'application/pdf'
-            else:
-                o += 'ig registration fail!'
-        # transaction()
-        elif reg(re.match(r'^(tr|trans|transaction)/([^/]{3,50})/([^/]{3,50})/([^/]{1,12})/([^/]{26})/([^/]{680,685})$', raw, re.U)): 
-            # checks that price is positive, transaction not replicated, and that account is funded
-            byr, slr, prc, td, sig = reg.v.group(2), reg.v.group(3), float(reg.v.group(4)), reg.v.group(5), reg.v.group(6)
-            Bby, Bsr, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'B_' + bytes(slr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'ascii'), 
-            if (prc > 0) and \
-                    not (Ttr in d.keys()) and \
-                    verify(RSA_E, b64toi(d[Pby]), ' '.join((byr, slr, '%s' % prc, td)), bytes(sig, 'ascii')) and \
-                    float(d[Bby]) - prc > - float(d[Oby]):
-                d[Bby], d[Bsr] = '%f' % (float(d[Bby]) - prc), '%f' % (float(d[Bsr]) + prc)
-                d['NB_TR'] = '%d' % (int(d['NB_TR'])+1)
-                d[Ttr] = '/'.join((td, byr, slr, '%s' % prc)) 
-                o, mime = pdf_receipt(td[:19], bytes(byr,'utf8'), bytes(slr,'utf8'), prc, Ttr[2:].decode('ascii')), 'application/pdf'
-            else:
-                o += 'transaction!'
-        # buy()
-        elif reg(re.match(r'^(buy)/([^/]{3,50})/([^/]{3,80})/([^/]{26})/([^/]{680,685})$', raw, re.U)):
-            # checks 
-            byr, ig, td, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
-            Bby, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'ascii'), 
-            Iig = b'I_' + bytes(ig, 'utf8')
-            if verify(RSA_E, b64toi(d[Pby]), ' '.join((byr, ig, td)), bytes(sig, 'ascii')) and Iig in d.keys():
-                tab = d[Iig].decode('utf8').split('/')
-                prc, slr = float(tab[1]), tab[3]
-                d[Iig] += b'/' + bytes(byr, 'utf8')
-                #o = 'bought ig OK from %s at price %f' % (slr, prc)
-                sra = bytes(tab[4], 'ascii')
-                era = encrypt(RSA_E, b64toi(d[Pby]), sra)
-                o, mime = era, 'application/pdf'
-            else:
-                o += 'ig buy!'
-        # download()
-        elif reg(re.match(r'^(download)/([^/]{3,50})/([^/]+)/([^/]{680,685})$', raw, re.U)):
-            # checks 
-            byr, era, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4)
-            o += 'download!'
-        # isclient()
-        elif reg(re.match(r'^(isclient)/([^/]{3,50})/([^/]{3,50})/([^/]{3,80})/([^/]{680,685})$', raw, re.U)):
-            # checks 
-            slr, byr, ig, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
-            Psl, Iig = b'P_' + bytes(slr, 'utf8'), b'I_' + bytes(ig, 'utf8') 
-            if verify(RSA_E, b64toi(d[Psl]), '/'.join((slr, byr, ig, today[:10])), bytes(sig, 'ascii')):
-                tab = d[Iig].decode('utf8').split('/')
-                if byr in tab[3:]:
-                    o = 'OK'
-                else:
-                    o += 'not client!'
-            else:
-                o += 'bad signature!'
-        # receipt()
-        elif reg(re.match(r'^(receipt)/([^/]{10,100})$', raw, re.U)):
-            tid = reg.v.group(2)
-            Ttr = b'T_' + bytes(tid, 'ascii')
-            if Ttr in d.keys():
-                #o, mime = pdf_receipt(td[:19], bytes(byr,'utf8'), bytes(slr,'utf8'), prc, Ttr[2:].decode('ascii')), 'application/pdf'
-                o, mime = pdf_receipt(today[:19], 'jhjhjghg', 'blable', '0', Ttr[2:].decode('ascii')), 'application/pdf'
-            else:
-                o += 'receipt not found!'
-        # statement()
-        elif reg(re.match(r'^(state|statement|balance)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
-            own, sig = reg.v.group(2), reg.v.group(3)
-            Bow, Pow = b'B_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
-            if verify(RSA_E, b64toi(d[Pow]), ' '.join((own, today[:10])), bytes(sig, 'ascii')):
-                o, a = '%s\towner: %s\t\t         balance: \t%9.2f⊔\n' % (today[:19], own, float(d[Bow].decode('ascii'))), []
-                for x in d.keys():
-                    if reg(re.match('T_(.*)$', x.decode('ascii'))):
-                        tab = d[x].decode('utf8').split('/')
-                        if own in (tab[1], tab[2]):
-                            (t, tg) = ('\t', tab[2]) if own == tab[1] else ('\t'*3, tab[1])
-                            a.append('%s %s %25s%s%9.2f⊔\n' % (tab[0][:19], x[2:].decode('ascii'), tg, t, float(tab[3])))
-                o += ''.join(sorted(a, reverse=True))
-            else:
-                o += 'statement reading!'            
-        elif way == 'get':
-            if raw.lower() in ('source', 'src'):
-                o = open(__file__, 'r', encoding='utf8').read()
-            elif raw.lower() in ('help', 'about'):
-                o = 'Welcome to ⊔net!\n\nHere is the Help in PDF format soon!'
-            elif raw.lower() == 'reset':
-                subprocess.Popen(('rm', db)).communicate() # Of course this is only temporary available for testing!!!
-                o = 'RESET DATABASE OK!'
-            elif raw.lower() in ('log',):
-                o = open('/cup/log', 'r', encoding='utf8').read()                
-            elif raw.lower() in ('list',):
-                o = ''
-                for x in d.keys():
-                    if reg(re.match('I_(.*)$', x.decode('utf8'))):
-                        tab = d[x].decode('utf8').split('/')
-                        o += '%s\t%20s\t%7.2f⊔%9.2f\n' % (tab[0], x[2:].decode('utf8'), float(tab[1]), float(tab[2]))
-            else:
-                o, mime = frontpage(today, environ['REMOTE_ADDR']), 'application/xhtml+xml; charset=utf8'
+        if raw[:8].lower() == 'download':
+            arg = raw.split('/')
+            if len(arg)>2:
+                byr = arg[1]
+                if bytes(arg[2], 'utf8') in d.keys():
+                    ig = d[bytes(arg[2], 'utf8')].decode('utf8')
+                    if isclient(__owner__, byr, ig, 'localhost'):
+                        igname = '%s.pdf' % re.sub('[\s/]','_', ig)
+                        content = open('/cup/%s/' % __user__ + igname, 'rb').read()
+                        td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
+                        ki = [b64toi(x) for x in ds[byr].split()]
+                        ds.close()
+                        s = sign(ki[1], ki[2], '/'.join((byr, today[:10], '%s' % content)))
+                        if len(arg) == 4:
+                            sig = re.sub('(.{80})', '\\1\n', s.decode('ascii'), re.DOTALL)
+                            url = 'http://localhost/%s?%s' % (__user__, urllib.parse.quote(raw))
+                            if arg[3] == 'plain':
+                                o = 'Intangible Good:\t\'%s\'\ncreated by:\t\t\'%s\'\npurchased by:\t\t\'%s\'\ndate:\t\t\t%s\nurl: %s\n\ndigital signature of dedicated IG (RSA 4096 bits):\n\n%s' % (ig, __owner__, byr, today[:10], url[:-6], sig)
+                            elif arg[3] == 'pdf':
+                                o, mime, fname = receipt(td[:19], ig, __owner__, byr, url[:-4], sig), 'application/pdf', 'receipt_' + igname
+                        else:
+                            o, mime, fname = content, 'application/pdf', igname                 
+        else:
+            o, mime = frontpage(today, environ['REMOTE_ADDR'], d), 'application/xhtml+xml; charset=utf8'
     else:
         o += 'arg too long'
     d.close()
-    start_response('200 OK', [('Content-type', mime)])
+    start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))])
     return [o if mime == 'application/pdf' else o.encode('utf8')] 
 
 def favicon():
@@ -214,117 +100,30 @@ def favicon():
     tmp = base64.b64encode(code.encode('utf8'))
     return '<link xmlns="http://www.w3.org/1999/xhtml" rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml;base64,%s"/>\n' % tmp.decode('utf8')
 
-def frontpage(today, ip):
+def frontpage(today, ip, d):
     "not in html!"
-    d = dbm.open('/cup/bank')
-    nb, su, ck , tr, di, ni = 0, 0, 0, int(d['NB_TR']), d['__DIGEST__'], 0
-    for x in d.keys():
-        if reg(re.match('B_(.*)$', x.decode('utf8'))):
-            nb += 1
-            su += abs(float(d[x])/2)
-            ck += float(d[x])
-        if reg(re.match('I_', x.decode('utf8'))):
-            ni += 1
-    d.close()
     o = '<?xml version="1.0" encoding="utf8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
-    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
+    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:start;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
-    o += '<text x="80" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
-    o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!" transform="rotate(-30 92,25)">Beta</text>\n'
-    o += '<text class="alpha" font-size="64pt" x="50%" y="33%"><tspan title="only http GET or POST!">No https, no html,</tspan><tspan x="50%" dy="100" title="only SVG and PDF!">no JavaScript,</tspan><tspan x="50%" dy="120" title="better privacy also!">better security!</tspan></text>\n'
-    o += '<text class="foot" x="50%%" y="50" title="today">%s</text>\n' % today[:19]
-    o += '<text class="foot" x="16%%" y="80%%" title="registered users">%04d users</text>\n' % nb
-    o += '<text class="foot" x="38%%" y="80%%" title="">%06d transactions</text>\n' % tr
-    o += '<text class="foot" x="62%%" y="80%%" title="number of registered Intangible Goods">%04d IGs</text>\n' % ni
-    o += '<text class="foot" x="84%%" y="80%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % su
-    o += '<a xlink:href="bank?src" ><text class="note" x="160" y="98%" title="on GitHub (https://github.com/pelinquin/cup) hack it, share it!">Download the source code!</text></a>\n'
+    o += '<text x="80" y="70" font-size="45">%s</text>\n' % __user__
+    o += '<text class="alpha" font-size="64pt" x="50%" y="23%">Here are my IGs!</text>\n'
     if ip == '127.0.0.1': 
         o += '<text class="note" x="160" y="90"  title="my ip adress">local server</text>\n'
-    o += '<a xlink:href="bank?help"><text class="note" x="99%" y="20"  title="help">Help</text></a>\n'
-    o += '<a xlink:href="u?pi"     ><text class="note" x="99%" y="40"  title="at home!">Host</text></a>\n'            
-    o += '<a xlink:href="bank?log" ><text class="note" x="99%" y="60"  title="log file">Log</text></a>\n'
-    o += '<a xlink:href="bank?list"><text class="note" x="99%" y="80"  title="ig list">List</text></a>\n'
-    o += '<text class="note" x="50%%" y="98%%" title="you can use that server!">Status: <tspan fill="%s</tspan></text>\n' % ('green">OK' if (abs(ck) <= 0.00001) else 'red">Error!')
-    o += '<text class="note" x="99%%" y="95%%" title="database|program" >Digest: %s|%s</text>\n' % (di.decode('utf8'), __digest__.decode('utf8'))
+    for i, x in enumerate(d.keys()):
+        o += '<text class="foot" x="160" y="%s">%s</text>\n' % (200 + 30*i, d[x].decode('utf8'))
     o += '<text class="note" x="99%%" y="98%%" title="or visit \'%s\'">Contact: %s</text>\n' % (__url__, __email__) 
     return o + '</svg>'
 
-def format_cmd(post, cmd):
+
+def format_bool(post, cmd, host):
     co = http.client.HTTPConnection(host)    
     if post:
         co.request('POST', '/bank', urllib.parse.quote(cmd))
     else:
         co.request('GET', '/bank?' + urllib.parse.quote(cmd))
-    return co.getresponse().read().decode('utf8')    
-
-def format_cmd1(post, cmd):
-    co = http.client.HTTPConnection(host)    
-    if post:
-        co.request('POST', '/bank', urllib.parse.quote(cmd))
-    else:
-        co.request('GET', '/bank?' + urllib.parse.quote(cmd))
-    res = co.getresponse().read()
-    if res[:5] == b'Error':
-        return res.decode('utf8')    
-    else:
-        return res
-    
-def format_pdf(post, cmd, f):
-    co = http.client.HTTPConnection(host)    
-    if post:
-        co.request('POST', '/bank', urllib.parse.quote(cmd))
-    else:
-        co.request('GET', '/bank?' + urllib.parse.quote(cmd))
-    res = co.getresponse().read()
-    #return res
-    open('%s.pdf' % f, 'wb').write(res)
-    return 'OK'
-
-def register(owner, iduser='anonymous', host='localhost', post=False):
-    "_"
-    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')    
-    ki, kb = [b64toi(x) for x in ds[owner].split()], [x for x in ds[owner].split()]
-    ds.close()
-    s = sign(ki[1], ki[2], ' '.join((td[:10], owner, iduser)))
-    assert (verify(RSA_E, ki[2], ' '.join((td[:10], owner, iduser)), s))
-    cmd = '/'.join(('reg', owner, iduser, kb[2].decode('ascii'), s.decode('ascii')))
-    return format_cmd(post, cmd)
-
-def igreg(owner, idig, p1, pf, host='localhost', post=False):
-    "_"
-    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
-    ki = [b64toi(x) for x in ds[owner].split()]
-    ds.close()
-    s = sign(ki[1], ki[2], ' '.join((td[:10], owner, idig, '%s' % p1, '%s' % pf)))
-    cmd = '/'.join(('ig', owner, idig, '%s' % p1, '%s' % pf, s.decode('ascii')))
-    era = format_cmd1(post, cmd)
-    if era[:5] != 'Error':
-        sk = decrypt(ki[1], ki[2], era)
-        d = dbm.open('/cup/mysite', 'c')
-        d[sk] = ig
-        d.close()
-    return era
-
-def transaction(byr, slr, prc, host='localhost', post=False):
-    "_"
-    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
-    ki = [b64toi(x) for x in ds[byr].split()]
-    ds.close()
-    s = sign(ki[1], ki[2], ' '.join((byr, slr, '%s' % prc, td)))
-    cmd = '/'.join(('transaction', byr, slr, '%s' % prc, td, s.decode('ascii')))
-    return format_pdf(post, cmd, 'tata')
-
-def buy(byr, ig, host='localhost', post=False):
-    "_"
-    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
-    ki = [b64toi(x) for x in ds[byr].split()]
-    ds.close()
-    s = sign(ki[1], ki[2], ' '.join((byr, ig, td)))
-    cmd = '/'.join(('buy', byr, ig, td, s.decode('ascii')))
-    era = format_cmd1(post, cmd)
-    sk = decrypt(ki[1], ki[2], era)
-    print ('http://%s/mysite?download/' % host + urllib.parse.quote(byr) + '/' + sk.decode('ascii'))
+    res = co.getresponse().read().decode('utf8')
+    return (res == 'OK') 
 
 def isclient(slr, byr, ig, host='localhost', post=False):
     "_"
@@ -333,41 +132,8 @@ def isclient(slr, byr, ig, host='localhost', post=False):
     ds.close()
     s = sign(ki[1], ki[2], '/'.join((slr, byr, ig, td[:10])))
     cmd = '/'.join(('isclient', slr, byr, ig, s.decode('ascii')))
-    return format_cmd(post, cmd)
+    return format_bool(post, cmd, host)
 
-def download(byr, url, host='localhost', post=False):
-    "_"
-    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
-    ki = [b64toi(x) for x in ds[byr].split()]
-    ds.close()
-    era = encrypt(RSA_E, ki[2], url)
-    s = sign(ki[1], ki[2], ' '.join((byr, td[:10], '%s' % era[:20])))
-    cmd = '/'.join(('download', byr, '%s' % era, s.decode('ascii')))
-    return format_pdf(post, cmd, 'tata')
-
-def prep_transaction(byr, slr, prc, host='localhost', post=False):
-    "_"
-    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
-    ki = [b64toi(x) for x in ds[byr].split()]
-    ds.close()
-    s = sign(ki[1], ki[2], ' '.join((byr, slr, '%s' % prc, td)))
-    cmd = '/'.join(('transaction', byr, slr, '%s' % prc, td, s.decode('ascii')))
-    return 'http://%s/bank?%s' % (host, urllib.parse.quote(cmd))
-
-def prep_receipt(tid, host='localhost', post=False):
-    "_"
-    cmd = '/'.join(('receipt', tid))
-    return 'http://%s/bank?%s' % (host, urllib.parse.quote(cmd))
-
-def statement(own, host='localhost', post=False):
-    "_"
-    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
-    ki = [b64toi(x) for x in ds[own].split()]
-    ds.close()
-    s = sign(ki[1], ki[2], ' '.join((own, td[:10])))
-    cmd = '/'.join(('statement', own, s.decode('ascii')))
-    return format_cmd(post, cmd)
-            
 def itob64(n):
     "utility to transform int to base64"
     c = hex(n)[2:]
@@ -470,8 +236,11 @@ class updf:
         "stream parser"
         ff, other = par[2].split('F'), False
         o = '1 0 0 1 %s %s Tm /F%s %s Tf %s TL ' % (par[0]+self.mx, self.ph-par[1]-self.my, ff[1], ff[0], 1.2*int(ff[0]))
-        o += '(%s)Tj ' % par[3]
-        
+        #o += '(%s)Tj ' % par[3]
+        for m in re.compile(r'([^\n]+)').finditer(par[3]):
+            o += '%s[(%s)]TJ ' % ('T* ' if other else '', self.kern(m.group(1), self.afm[int(ff[1])-1])) 
+            other = True
+        #   
         #for m in re.compile(r'(/(\d+)F(\d+)\{([^\}]*)\}|([^\n/]+))').finditer(par[3]):
         #    if m.group(5):
         #        o += '%s[(%s)]TJ ' % ('T* ' if other else '', self.kern(m.group(5), self.afm[int(ff[1])-1])) 
@@ -789,34 +558,90 @@ class AFM:
             l = c
         return o 
 
-if __name__ == '__main__':
-    popu = {
-        'Pelinquin':        'fr167071927202809', 
-        'Laurent Fournier': 'fr167071927202809', 
-        'Alice':            'fr267070280099999', 
-        'Valérie':          'fr264070287098888', 
-        'Bob':              'fr161070280095555', 
-        'Carl⊔':            'fr177070284098888', 
-        }
-    
-    man, woman, ig, host = 'Laurent Fournier', 'Valérie', 'myig_您1', 'localhost'
-    #host = 'pi.pelinquin.fr'
-    #print (register(man, popu[man], host))
-    #print (register('Alice', 'anonymous', host))
-    #print (register(woman, 'anonymous', host))    
-    #print (register('Bob', 'anonymous', host))    
-    #print (transaction(man, woman, 2.15, host))
-    #print (prep_transaction(man, woman, 2.15, host))
-    #print (prep_receipt('jHoUFfy4BuW283hsOpnZ', host))
-    #print (transaction(woman, man,  3.2, host))
-    #print (transaction(woman, man,  2.2, host))
-    #print (statement(woman), host)    
-    sk = igreg(man, ig, 0.56, 100000, host)
+def receipt(td, ig, slr, byr, url, sig):
+    "_"
+    a = updf(595, 842)
+    content = [[(100, 300, '32F1', 'Invoice'),
+                (420, 18, '12F1', td), 
+                (20, 400, '14F1', 'Buyer: %s' % byr), 
+                (20, 430, '14F1', 'Seller: %s' % slr), 
+                (20, 460, '14F1', 'Intangible Good:'), 
+                (300, 460, '18F1', ig), 
+                (10, 630, '12F1', 'Digital Signature of dedicated IG \(RSA 4096\):'),
+                (10, 650, '10F3', sig),
+                (10, 782, '8F1', url),
+                ]]
+    return a.gen(content)
 
-    #print (register_ig(woman, 'mon album', 1.5, 200000, host))    
-    #print (register_ig(man, 'encore39', 0.56, 100000, host))    
-    buy(woman, ig, host)
+def format_cmd(post, cmd, binary=False):
+    co = http.client.HTTPConnection(host)    
+    if post:
+        co.request('POST', '/bank', urllib.parse.quote(cmd))
+    else:
+        co.request('GET', '/bank?' + urllib.parse.quote(cmd))
+    if binary:
+        return co.getresponse().read()    
+    else:
+        return co.getresponse().read().decode('utf8')    
+
+def format_cmd1(post, cmd):
+    co = http.client.HTTPConnection(host)    
+    if post:
+        co.request('POST', '/bank', urllib.parse.quote(cmd))
+    else:
+        co.request('GET', '/bank?' + urllib.parse.quote(cmd))
+    res = co.getresponse().read()
+    if res[:5] == b'Error':
+        return res.decode('utf8')    
+    else:
+        return res
+
+def register(owner, iduser='anonymous', host='localhost', post=False):
+    "_"
+    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')    
+    ki, kb = [b64toi(x) for x in ds[owner].split()], [x for x in ds[owner].split()]
+    ds.close()
+    s = sign(ki[1], ki[2], ' '.join((td[:10], owner, iduser)))
+    assert (verify(RSA_E, ki[2], ' '.join((td[:10], owner, iduser)), s))
+    cmd = '/'.join(('reg', owner, iduser, kb[2].decode('ascii'), s.decode('ascii')))
+    return format_cmd(post, cmd)
+
+def igreg(owner, idig, p1, pf, host='localhost', post=False):
+    "_"
+    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
+    ki = [b64toi(x) for x in ds[owner].split()]
+    ds.close()
+    s = sign(ki[1], ki[2], ' '.join((td[:10], owner, idig, '%s' % p1, '%s' % pf)))
+    cmd = '/'.join(('ig', owner, idig, '%s' % p1, '%s' % pf, s.decode('ascii')))
+    era = format_cmd(post, cmd, True)
+    if era[:5] != b'Error':
+        sk = decrypt(ki[1], ki[2], era)
+        d = dbm.open('/cup/%s/keys' % __user__, 'c')
+        d[sk] = idig
+        d.close()
+    return era
+
+def buy(byr, ig, host='localhost', post=False):
+    "_"
+    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
+    ki = [b64toi(x) for x in ds[byr].split()]
+    ds.close()
+    s = sign(ki[1], ki[2], ' '.join((byr, ig, td)))
+    cmd = '/'.join(('buy', byr, ig, td, s.decode('ascii')))
+    era = format_cmd1(post, cmd)
+    sk = decrypt(ki[1], ki[2], era)
+    print ('http://%s/%s?download/' % (host, __user__) + urllib.parse.quote(byr) + '/' + sk.decode('ascii'))
+
+if __name__ == '__main__':
+
+    print (__user__)
+    host = 'localhost'
+    print(register(__owner__, 'fr167071927202809', host))
+    print(igreg(__owner__, 'First IG', 2.8, 200000, host))
+    print(igreg(__owner__, 'dagstuhl', 2.2, 100000, host))
+    print(igreg(__owner__, 'eco', 5.8, 200000, host))
+    print(igreg(__owner__, 'economie de la culture', 5.8, 200000, host))
+    buy(__owner__, 'economie de la culture', host)
 
     sys.exit()
-
 # End ⊔net!
