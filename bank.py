@@ -81,7 +81,8 @@ def application(environ, start_response):
     log(raw[:10] + '...', environ['REMOTE_ADDR'])
     d = dbm.open(db[:-3], 'c')
     if len(raw) < MAX_ARG_SIZE:
-        if reg(re.match(r'^(reg|register)/([^/]{3,50})/([^/]{9,17})/([^/]{680,685})/([^/]{680,685})$', raw, re.U)): # register()
+        # register()
+        if reg(re.match(r'^(user|reg|register)/([^/]{3,50})/([^/]{9,17})/([^/]{680,685})/([^/]{680,685})$', raw, re.U)):
             # checks both id and public key not already used and local id is valid
             own, uid, pbk, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
             Por, Bor, Oor, Uid = b'P_' + bytes(own, 'utf8'), b'B_' + bytes(own, 'utf8'), b'O_' + bytes(own, 'utf8'), b'U_' + bytes(uid, 'utf8')
@@ -94,7 +95,8 @@ def application(environ, start_response):
                 d[Por], d[Bor], d[Uid], o = pbk, '0', own, 'Public key id registration OK for \'%s\'' % own 
             else:
                 o += ' something wrong in user registration!'
-        elif reg(re.match(r'^(ig|immaterial|good)/([^/]{3,50})/([^/]{3,80})/([^/]{1,12})/([^/]{1,12})/([^/]{680,685})$', raw, re.U)): #ig()
+        # igreg()
+        elif reg(re.match(r'^(ig|igreg|immaterial|good)/([^/]{3,50})/([^/]{3,80})/([^/]{1,12})/([^/]{1,12})/([^/]{680,685})$', raw, re.U)): 
             # checks
             own, iid, p1, pf, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6)
             Iig, Ppk = b'I_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf8')
@@ -109,7 +111,8 @@ def application(environ, start_response):
                 o, mime = era, 'application/pdf'
             else:
                 o += 'ig registration fail!'
-        elif reg(re.match(r'^(tr|trans|transaction)/([^/]{3,50})/([^/]{3,50})/([^/]{1,12})/([^/]{26})/([^/]{680,685})$', raw, re.U)): # tr()
+        # transaction()
+        elif reg(re.match(r'^(tr|trans|transaction)/([^/]{3,50})/([^/]{3,50})/([^/]{1,12})/([^/]{26})/([^/]{680,685})$', raw, re.U)): 
             # checks that price is positive, transaction not replicated, and that account is funded
             byr, slr, prc, td, sig = reg.v.group(2), reg.v.group(3), float(reg.v.group(4)), reg.v.group(5), reg.v.group(6)
             Bby, Bsr, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'B_' + bytes(slr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'ascii'), 
@@ -123,7 +126,8 @@ def application(environ, start_response):
                 o, mime = pdf_receipt(td[:19], bytes(byr,'utf8'), bytes(slr,'utf8'), prc, Ttr[2:].decode('ascii')), 'application/pdf'
             else:
                 o += 'transaction!'
-        elif reg(re.match(r'^(buy)/([^/]{3,50})/([^/]{3,80})/([^/]{26})/([^/]{680,685})$', raw, re.U)): # buy()
+        # buy()
+        elif reg(re.match(r'^(buy)/([^/]{3,50})/([^/]{3,80})/([^/]{26})/([^/]{680,685})$', raw, re.U)):
             # checks 
             byr, ig, td, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
             Bby, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'ascii'), 
@@ -131,17 +135,29 @@ def application(environ, start_response):
             if verify(RSA_E, b64toi(d[Pby]), ' '.join((byr, ig, td)), bytes(sig, 'ascii')) and Iig in d.keys():
                 tab = d[Iig].decode('utf8').split('/')
                 prc, slr = float(tab[1]), tab[3]
+                d[Iig] += b'/' + bytes(byr, 'utf8')
                 #o = 'bought ig OK from %s at price %f' % (slr, prc)
                 sra = bytes(tab[4], 'ascii')
                 era = encrypt(RSA_E, b64toi(d[Pby]), sra)
                 o, mime = era, 'application/pdf'
             else:
                 o += 'ig buy!'
-        elif reg(re.match(r'^(download)/([^/]{3,50})/([^/]+)/([^/]{680,685})$', raw, re.U)): 
+        # download()
+        elif reg(re.match(r'^(download)/([^/]{3,50})/([^/]+)/([^/]{680,685})$', raw, re.U)):
             # checks 
             byr, era, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4)
             o += 'download!'
-        elif reg(re.match(r'^(receipt)/([^/]{10,100})$', raw, re.U)): # receipt()
+        # isclient()
+        elif reg(re.match(r'^(isclient)/([^/]{3,50})/([^/]{3,50})/([^/]{3,80})/([^/]{680,685})$', raw, re.U)):
+            # checks 
+            slr, byr, ig, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
+            Psl = b'P_' + bytes(slr, 'utf8') 
+            if verify(RSA_E, b64toi(d[Psl]), '/'.join((slr, byr, ig, today[:10])), bytes(sig, 'ascii')):
+                o = 'client OK'
+            else:
+                o += 'not client!'
+        # receipt()
+        elif reg(re.match(r'^(receipt)/([^/]{10,100})$', raw, re.U)):
             tid = reg.v.group(2)
             Ttr = b'T_' + bytes(tid, 'ascii')
             if Ttr in d.keys():
@@ -149,7 +165,8 @@ def application(environ, start_response):
                 o, mime = pdf_receipt(today[:19], 'jhjhjghg', 'blable', '0', Ttr[2:].decode('ascii')), 'application/pdf'
             else:
                 o += 'receipt not found!'
-        elif reg(re.match(r'^(state|statement|balance)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)): # statement()
+        # statement()
+        elif reg(re.match(r'^(state|statement|balance)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
             own, sig = reg.v.group(2), reg.v.group(3)
             Bow, Pow = b'B_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
             if verify(RSA_E, b64toi(d[Pow]), ' '.join((own, today[:10])), bytes(sig, 'ascii')):
@@ -178,7 +195,7 @@ def application(environ, start_response):
                 for x in d.keys():
                     if reg(re.match('I_(.*)$', x.decode('utf8'))):
                         tab = d[x].decode('utf8').split('/')
-                        o += '%s\t%s\t%7.2f⊔%9.2f\n' % (tab[0], x[2:].decode('utf8'), float(tab[1]), float(tab[2]))
+                        o += '%s\t%20s\t%7.2f⊔%9.2f\n' % (tab[0], x[2:].decode('utf8'), float(tab[1]), float(tab[2]))
             elif reg(re.match(r'^secret_url(.*)$', raw, re.U)):
                 o, mime = open('/cup/sample.pdf', 'rb').read(), 'application/pdf'
             else:
@@ -212,7 +229,7 @@ def frontpage(today, ip):
     o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="80" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
-    o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!">Beta</text>\n'
+    o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!" transform="rotate(-30 92,25)">Beta</text>\n'
     o += '<text class="alpha" font-size="64pt" x="50%" y="33%"><tspan title="only http GET or POST!">No https, no html,</tspan><tspan x="50%" dy="100" title="only SVG and PDF!">no JavaScript,</tspan><tspan x="50%" dy="120" title="better privacy also!">better security!</tspan></text>\n'
     o += '<text class="foot" x="50%%" y="50" title="today">%s</text>\n' % today[:19]
     o += '<text class="foot" x="16%%" y="80%%" title="registered users">%04d users</text>\n' % nb
@@ -296,6 +313,15 @@ def buy(byr, ig, host='localhost', post=False):
     cmd = '/'.join(('buy', byr, ig, td, s.decode('ascii')))
     era = format_cmd1(post, cmd)
     return decrypt(ki[1], ki[2], era)
+
+def isclient(slr, byr, ig, host='localhost', post=False):
+    "_"
+    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
+    ki = [b64toi(x) for x in ds[slr].split()]
+    ds.close()
+    s = sign(ki[1], ki[2], '/'.join((slr, byr, ig, td[:10])))
+    cmd = '/'.join(('isclient', slr, byr, ig, s.decode('ascii')))
+    return format_cmd(post, cmd)
 
 def download(byr, url, host='localhost', post=False):
     "_"
@@ -763,9 +789,9 @@ if __name__ == '__main__':
     
     man, woman, ig, host = 'Laurent Fournier', 'Valérie', 'toto您tata', 'localhost'
     #host = 'pi.pelinquin.fr'
-    #print (register(man, popu[man], host))
+    print (register(man, popu[man], host))
     #print (register('Alice', 'anonymous', host))
-    #print (register(woman, 'anonymous', host))    
+    print (register(woman, 'anonymous', host))    
     #print (register('Bob', 'anonymous', host))    
     #print (transaction(man, woman, 2.15, host))
     #print (prep_transaction(man, woman, 2.15, host))
@@ -773,11 +799,13 @@ if __name__ == '__main__':
     #print (transaction(woman, man,  3.2, host))
     #print (transaction(woman, man,  2.2, host))
     #print (statement(woman), host)    
-    #print (register_ig(man, ig, 0.56, 100000, host))    
+    print (register_ig(man, ig, 0.56, 100000, host))    
     #print (register_ig(woman, 'mon album', 1.5, 200000, host))    
-    print (register_ig(man, 'encore39', 0.56, 100000, host))    
-    url = buy(woman, 'encore39', host)
-    download(woman, url)
+    #print (register_ig(man, 'encore39', 0.56, 100000, host))    
+    url = buy(woman, ig, host)
+    print (isclient(man, woman, 'encore39', host))
+
+    #download(woman, url)
 
     sys.exit()
 
