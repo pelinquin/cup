@@ -20,7 +20,7 @@
 #-----------------------------------------------------------------------------
 "_"
 
-import re, os, sys, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools, subprocess
+import re, os, sys, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools, subprocess, math
 from Crypto.Cipher import AES
 
 __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf8').read().encode('utf8')).digest())[:5]
@@ -46,7 +46,7 @@ def init_db(db):
     "_"
     if not os.path.isfile(db):
         d = dbm.open(db[:-3], 'c')
-        d['__DIGEST__'], d['NB_TR'] = __digest__, '0'
+        d['__DIGEST__'] = __digest__
         d.close()
 
 def log(s, ip=''):
@@ -56,18 +56,26 @@ def log(s, ip=''):
     cont = open(logf, 'r', encoding='utf8').read()
     open(logf, 'w', encoding='utf8').write('%s|%s|%s\n%s' % (now[:-7], ip, s, cont))
 
-
-def pdf_receipt(td, byr, slr, prc, tr):
+def receipt(td, ig, slr, byr, url, ncl, sig):
     "_"
-    content = [[(100, 300, '32F1', 'Invoice'),
-                (420, 18, '12F1', td), 
-                (20, 400, '14F1', 'Buyer: %s' % byr), 
-                (20, 450, '14F1', 'Seller: %s' % slr), 
-                (20, 500, '14F1', 'Intangible Good: example'), 
-                (480, 600, '12F1', 'Price: %s' % prc),
-                (10, 782, '10F1', 'Transaction: %s' % tr),
-                ]]
     a = updf(595, 842)
+    try: ig.encode('ascii')
+    except: ig = '%s' % bytes(ig, 'utf8')
+    try: byr.encode('ascii')
+    except: byr = '%s' % bytes(byr, 'utf8')
+    try: slr.encode('ascii')
+    except: slr = '%s' % bytes(slr, 'utf8')
+    content = [[(100, 300, '32F1', 'Invoice'),
+                (420,  18, '12F1', td), 
+                (20,  400, '14F1', 'Buyer: %s' % byr), 
+                (20,  430, '14F1', 'Seller: %s' % slr), 
+                (20,  460, '14F1', 'Intangible Good:'), 
+                (300, 460, '18F1', ig), 
+                (300, 500, '9F1',  '%d instances sold' % ncl), 
+                (10,  630, '12F1', 'Digital Signature of dedicated IG \(RSA 4096\):'),
+                (10,  650, '10F3', sig),
+                (10,  782, '8F1',  url),
+                ]]
     return a.gen(content)
 
 def application(environ, start_response):
@@ -101,7 +109,9 @@ def application(environ, start_response):
             own, iid, p1, pf, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6)
             Iig, Ppk = b'I_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf8')
             if Iig in d.keys():
-                o += 'IG id already set!' 
+                o += 'IG id already set!'
+            elif float(p1)<0 or float(pf)<float(1):
+                o += 'bad prices!'
             elif verify(RSA_E, b64toi(d[Ppk]), ' '.join((today[:10], own, iid, p1, pf)), bytes(sig, 'ascii')):
                 ra = os.urandom(16)
                 akey = itob64(int(binascii.hexlify(os.urandom(16)), 16))
@@ -111,35 +121,39 @@ def application(environ, start_response):
                 o, mime = era, 'application/pdf'
             else:
                 o += 'ig registration fail!'
-        # transaction()
-        elif reg(re.match(r'^(tr|trans|transaction)/([^/]{3,50})/([^/]{3,50})/([^/]{1,12})/([^/]{26})/([^/]{680,685})$', raw, re.U)): 
-            # checks that price is positive, transaction not replicated, and that account is funded
-            byr, slr, prc, td, sig = reg.v.group(2), reg.v.group(3), float(reg.v.group(4)), reg.v.group(5), reg.v.group(6)
-            Bby, Bsr, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'B_' + bytes(slr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'ascii'), 
-            if (prc > 0) and \
-                    not (Ttr in d.keys()) and \
-                    verify(RSA_E, b64toi(d[Pby]), ' '.join((byr, slr, '%s' % prc, td)), bytes(sig, 'ascii')) and \
-                    float(d[Bby]) - prc > - float(d[Oby]):
-                d[Bby], d[Bsr] = '%f' % (float(d[Bby]) - prc), '%f' % (float(d[Bsr]) + prc)
-                d['NB_TR'] = '%d' % (int(d['NB_TR'])+1)
-                d[Ttr] = '/'.join((td, byr, slr, '%s' % prc)) 
-                o, mime = pdf_receipt(td[:19], bytes(byr,'utf8'), bytes(slr,'utf8'), prc, Ttr[2:].decode('ascii')), 'application/pdf'
-            else:
-                o += 'transaction!'
         # buy()
         elif reg(re.match(r'^(buy)/([^/]{3,50})/([^/]{3,80})/([^/]{26})/([^/]{680,685})$', raw, re.U)):
             # checks 
             byr, ig, td, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
             Bby, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'ascii'), 
             Iig = b'I_' + bytes(ig, 'utf8')
-            if verify(RSA_E, b64toi(d[Pby]), ' '.join((byr, ig, td)), bytes(sig, 'ascii')) and Iig in d.keys():
+            if verify(RSA_E, b64toi(d[Pby]), ' '.join((byr, ig, td)), bytes(sig, 'ascii')) and Iig in d.keys() and not (Ttr in d.keys()):
                 tab = d[Iig].decode('utf8').split('/')
                 prc, slr = float(tab[1]), tab[3]
-                d[Iig] += b'/' + bytes(byr, 'utf8')
-                #o = 'bought ig OK from %s at price %f' % (slr, prc)
-                sra = bytes(tab[4], 'ascii')
-                era = encrypt(RSA_E, b64toi(d[Pby]), sra)
-                o, mime = era, 'application/pdf'
+                Bsr = b'B_'+bytes(slr, 'utf8')
+                i = len(tab[5:])
+                if i == 0:
+                    p = prc
+                else:
+                    p1, pf = float(tab[1]), float(tab[2])   # 6/ get nb, p1, pf
+                    k, xi = math.log(pf-p1) - math.log(pf-2*p1), .25          
+                    p = (pf - (pf-p1)*math.exp(-xi*i*k))/(i+1)               # new price
+                    dt = (pf-p1)*(math.exp(-xi*(i-1)*k) - math.exp(-xi*i*k)) # new delta
+                    rfd = (p-dt)/i                                           # 7/ update prices
+                if float(d[Bby]) - p > - float(d[Oby]):
+                    if i == 0:
+                        d[Bby], d[Bsr] = '%f' % (float(d[Bby]) - p), '%f' % (float(d[Bsr]) + p)
+                    else:
+                        d[Bby], d[Bsr] = '%f' % (float(d[Bby]) - p), '%f' % (float(d[Bsr]) + dt)
+                        for cst in tab[5:]:
+                            Bcs = b'B_'+bytes(cst, 'utf8')
+                            d[Bcs] = '%f' % (float(d[Bcs]) + rfd)
+                    d[Iig] += b'/' + bytes(byr, 'utf8') 
+                    d[Ttr] = '/'.join((td, byr, slr, '%s' % prc)) 
+                    era = encrypt(RSA_E, b64toi(d[Pby]), bytes(tab[4], 'ascii'))
+                    o, mime = era, 'application/pdf'
+                else:
+                    o += 'account not funded!'
             else:
                 o += 'ig buy!'
         # download()
@@ -154,21 +168,12 @@ def application(environ, start_response):
             Psl, Iig = b'P_' + bytes(slr, 'utf8'), b'I_' + bytes(ig, 'utf8') 
             if verify(RSA_E, b64toi(d[Psl]), '/'.join((slr, byr, ig, today[:10])), bytes(sig, 'ascii')):
                 tab = d[Iig].decode('utf8').split('/')
-                if byr in tab[3:]:
-                    o = 'OK'
+                if byr in tab[5:]:
+                    o = '%d' % len(tab[5:]) # send number of customers
                 else:
                     o += 'not client!'
             else:
                 o += 'bad signature!'
-        # receipt()
-        elif reg(re.match(r'^(receipt)/([^/]{10,100})$', raw, re.U)):
-            tid = reg.v.group(2)
-            Ttr = b'T_' + bytes(tid, 'ascii')
-            if Ttr in d.keys():
-                #o, mime = pdf_receipt(td[:19], bytes(byr,'utf8'), bytes(slr,'utf8'), prc, Ttr[2:].decode('ascii')), 'application/pdf'
-                o, mime = pdf_receipt(today[:19], 'jhjhjghg', 'blable', '0', Ttr[2:].decode('ascii')), 'application/pdf'
-            else:
-                o += 'receipt not found!'
         # statement()
         elif reg(re.match(r'^(state|statement|balance)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
             own, sig = reg.v.group(2), reg.v.group(3)
@@ -176,7 +181,7 @@ def application(environ, start_response):
             if verify(RSA_E, b64toi(d[Pow]), ' '.join((own, today[:10])), bytes(sig, 'ascii')):
                 o, a = '%s\towner: %s\t\t         balance: \t%9.2f⊔\n' % (today[:19], own, float(d[Bow].decode('ascii'))), []
                 for x in d.keys():
-                    if reg(re.match('T_(.*)$', x.decode('ascii'))):
+                    if reg(re.match('T_(.*)$', x.decode('utf8'))):
                         tab = d[x].decode('utf8').split('/')
                         if own in (tab[1], tab[2]):
                             (t, tg) = ('\t', tab[2]) if own == tab[1] else ('\t'*3, tab[1])
@@ -217,7 +222,7 @@ def favicon():
 def frontpage(today, ip):
     "not in html!"
     d = dbm.open('/cup/bank')
-    nb, su, ck , tr, di, ni = 0, 0, 0, int(d['NB_TR']), d['__DIGEST__'], 0
+    nb, su, ck , tr, di, ni = 0, 0, 0, 0, d['__DIGEST__'], 0
     for x in d.keys():
         if reg(re.match('B_(.*)$', x.decode('utf8'))):
             nb += 1
@@ -225,6 +230,8 @@ def frontpage(today, ip):
             ck += float(d[x])
         if reg(re.match('I_', x.decode('utf8'))):
             ni += 1
+        if reg(re.match('T_', x.decode('utf8'))):
+            tr += 1
     d.close()
     o = '<?xml version="1.0" encoding="utf8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
@@ -315,16 +322,6 @@ def transaction(byr, slr, prc, host='localhost', post=False):
     cmd = '/'.join(('transaction', byr, slr, '%s' % prc, td, s.decode('ascii')))
     return format_pdf(post, cmd, 'tata')
 
-def buy(byr, ig, host='localhost', post=False):
-    "_"
-    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
-    ki = [b64toi(x) for x in ds[byr].split()]
-    ds.close()
-    s = sign(ki[1], ki[2], ' '.join((byr, ig, td)))
-    cmd = '/'.join(('buy', byr, ig, td, s.decode('ascii')))
-    era = format_cmd1(post, cmd)
-    sk = decrypt(ki[1], ki[2], era)
-    print ('http://%s/mysite?download/' % host + urllib.parse.quote(byr) + '/' + sk.decode('ascii'))
 
 def isclient(slr, byr, ig, host='localhost', post=False):
     "_"
@@ -352,11 +349,6 @@ def prep_transaction(byr, slr, prc, host='localhost', post=False):
     ds.close()
     s = sign(ki[1], ki[2], ' '.join((byr, slr, '%s' % prc, td)))
     cmd = '/'.join(('transaction', byr, slr, '%s' % prc, td, s.decode('ascii')))
-    return 'http://%s/bank?%s' % (host, urllib.parse.quote(cmd))
-
-def prep_receipt(tid, host='localhost', post=False):
-    "_"
-    cmd = '/'.join(('receipt', tid))
     return 'http://%s/bank?%s' % (host, urllib.parse.quote(cmd))
 
 def statement(own, host='localhost', post=False):
@@ -470,8 +462,9 @@ class updf:
         "stream parser"
         ff, other = par[2].split('F'), False
         o = '1 0 0 1 %s %s Tm /F%s %s Tf %s TL ' % (par[0]+self.mx, self.ph-par[1]-self.my, ff[1], ff[0], 1.2*int(ff[0]))
-        o += '(%s)Tj ' % par[3]
-        
+        for m in re.compile(r'([^\n]+)').finditer(par[3]):
+            o += '%s[(%s)]TJ ' % ('T* ' if other else '', self.kern(m.group(1), self.afm[int(ff[1])-1])) 
+            other = True
         #for m in re.compile(r'(/(\d+)F(\d+)\{([^\}]*)\}|([^\n/]+))').finditer(par[3]):
         #    if m.group(5):
         #        o += '%s[(%s)]TJ ' % ('T* ' if other else '', self.kern(m.group(5), self.afm[int(ff[1])-1])) 
@@ -491,6 +484,8 @@ class updf:
             t = bytes('BT 1 w 0.9 0.9 0.9 RG %s %s %s %s re S 0 0 0 RG 0 Tc ' % (self.mx, self.my, self.pw-2*self.mx, self.ph-2*self.my), 'ascii')
             t += b'1.0 1.0 1.0 RG 0.8 0.9 1.0 rg 44 600 505 190 re B 0.0 0.0 0.0 rg '
             t += b'1.0 1.0 1.0 rg 1 0 0 1 60 680 Tm /F1 60 Tf (Put your Ads here)Tj 0.0 0.0 0.0 rg '
+            t += b'1.0 1.0 1.0 RG 0.6 0.6 0.6 rg 500 740 50 50 re B 0.0 0.0 0.0 rg '
+            t += b'1.0 1.0 1.0 rg 1 0 0 1 510 776 Tm 14 TL /F1 12 Tf (Ads)Tj T* (QR)Tj T* (Code)Tj 0.0 0.0 0.0 rg '
             for par in page: t += bytes(self.sgen(par), 'ascii')
             t += b'ET\n'
             #t1 = bytes('/P <</MCID 0>> BDC BT 1 0 0 1 10 20 Tm /F1 12 Tf (HELLO)Tj ET EMC /Link <</MCID 1>> BDC BT 1 0 0 1 100 20 Tm /F1 16 Tf (With a link)Tj ET EMC', 'ascii')
@@ -795,27 +790,18 @@ if __name__ == '__main__':
         'Laurent Fournier': 'fr167071927202809', 
         'Alice':            'fr267070280099999', 
         'Valérie':          'fr264070287098888', 
+        'Valérie Fournier': 'fr174070287098888', 
         'Bob':              'fr161070280095555', 
         'Carl⊔':            'fr177070284098888', 
         }
     
-    man, woman, ig, host = 'Laurent Fournier', 'Valérie', 'myig_您1', 'localhost'
+    man, woman, ig, host = 'Laurent Fournier', 'Valérie Fournier', 'myig_您1', 'localhost'
     #host = 'pi.pelinquin.fr'
-    #print (register(man, popu[man], host))
-    #print (register('Alice', 'anonymous', host))
-    #print (register(woman, 'anonymous', host))    
     #print (register('Bob', 'anonymous', host))    
-    #print (transaction(man, woman, 2.15, host))
-    #print (prep_transaction(man, woman, 2.15, host))
-    #print (prep_receipt('jHoUFfy4BuW283hsOpnZ', host))
-    #print (transaction(woman, man,  3.2, host))
-    #print (transaction(woman, man,  2.2, host))
-    #print (statement(woman), host)    
-    sk = igreg(man, ig, 0.56, 100000, host)
-
-    #print (register_ig(woman, 'mon album', 1.5, 200000, host))    
-    #print (register_ig(man, 'encore39', 0.56, 100000, host))    
-    buy(woman, ig, host)
+    print (statement(man), host)    
+    print (statement(woman), host)    
+    #sk = igreg(man, ig, 0.56, 100000, host)
+    #print (regig(woman, 'mon album', 1.5, 200000, host))    
 
     sys.exit()
 
