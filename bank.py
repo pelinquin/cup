@@ -58,7 +58,6 @@ def log(s, ip=''):
 
 def receipt(td, ig, slr, byr, url, ncl, sig):
     "_"
-    a = updf(595, 842)
     try: ig.encode('ascii')
     except: ig = '%s' % bytes(ig, 'utf8')
     try: byr.encode('ascii')
@@ -76,7 +75,62 @@ def receipt(td, ig, slr, byr, url, ncl, sig):
                 (10,  650, '10F3', sig),
                 (10,  782, '8F1',  url),
                 ]]
+    a = updf(595, 842)
     return a.gen(content)
+
+def pdf_statement(td, own, bal, h):
+    "_"
+    url = 'http://cupfoundation.net'
+    tab = sorted(h.keys(), reverse=True)
+    label = '\n'.join(tab)
+    relat = '\n'.join(['%s\n' % h[x][1] for x in tab])
+    crdit = '\n'.join([('%09.2f' % h[x][2] if h[x][0] else ' ') for x in tab])
+    debit = '\n'.join([(' ' if h[x][0] else '%09.2f' % h[x][2]) for x in tab])
+    content = [[(410,  18, '12F1', td), 
+                (20,  20, '14F1', own), 
+                (20,  240, '14F1', 'Balance'), 
+                (430, 240, '10F6', '%9.2f' % bal), 
+                (20,  260, '8F3', label), 
+                (320, 260, '8F1', relat), 
+                (430, 260, '8F3', crdit), 
+                (480, 260, '8F3', debit), 
+                (10,  782, '8F1', url),
+                ]]
+    a = updf(595, 842)
+    return a.gen(content)
+
+def api():
+    """All requests can be send in GET or in POST
+In Python, but one can use any other server side languages, for 
+\tco = http.client.HTTPConnection(host)    
+one can call:
+\tco.request('POST', '/bank', urllib.parse.quote(cmd))\nor
+\tco.request('GET', '/bank?' + urllib.parse.quote(cmd))
+to get the response, use: 
+\tco.getresponse().read()
+for binary (encrypted string or PDF), or
+\tco.getresponse().read().decode('utf8') 
+for utf-8 or ascii string 
+All requests include a signature of the sender for authentication\n 
+\n1/Register a user
+\treg/user/iduser/public_key/signature
+where:
+'user' is a name in any Unicode length<80 ('/' is the only not allowed character). 
+'iduser' is a valid personnal identifier. For French users, it 'fr' with the social security number
+'public_key' is the RSA 4096bits length public key in base64 encoding (url safe)....Never send your Private key!
+'signature' is the RSA signature from the user of the string: "date/user/userid", date should be at day precision, like ""
+\n\n2/Register an Intangible good
+\tig/user/ig_id/first_unitary_price/maximum_income/signature
+where:
+'signature' of the string: "date/user/ip_id/price_first/max_income"
+\n\n2/Buy an Intangible good
+\tig/user/ig_id/first_unitary_price/maximum_income/signature
+where:
+blabla
+\t
+...
+"""
+    return api.__doc__
 
 def application(environ, start_response):
     "wsgi server app"
@@ -93,7 +147,7 @@ def application(environ, start_response):
         if reg(re.match(r'^(user|reg|register)/([^/]{3,50})/([^/]{9,17})/([^/]{680,685})/([^/]{680,685})$', raw, re.U)):
             # checks both id and public key not already used and local id is valid
             own, uid, pbk, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
-            Por, Bor, Oor, Uid = b'P_' + bytes(own, 'utf8'), b'B_' + bytes(own, 'utf8'), b'O_' + bytes(own, 'utf8'), b'U_' + bytes(uid, 'utf8')
+            Por, Bor, Oor, Tor, Uid = b'P_' + bytes(own, 'utf8'), b'B_' + bytes(own, 'utf8'), b'O_' + bytes(own, 'utf8'), b'T_' + bytes(own, 'utf8'), b'U_' + bytes(uid, 'utf8')
             if Por in d.keys():
                 o += 'public key already exists for %s !' % own 
             elif (uid != 'anonymous') and (Uid in d.keys()):
@@ -101,6 +155,7 @@ def application(environ, start_response):
             elif verify(RSA_E, b64toi(bytes(pbk, 'ascii')), ' '.join((today[:10], own, uid)), bytes(sig, 'ascii')):
                 d[Oor] = '100' if uid != 'anonymous' and uid[:2] == 'fr' and int(uid[-2:]) == (97 - int(uid[2:-2])%97) else '0' # french id!
                 d[Por], d[Bor], d[Uid], o = pbk, '0', own, 'Public key id registration OK for \'%s\'' % own 
+                #d[Tor] = '/'.join((today, ' ', 'Initial', own, d[Oor].decode('utf8'))) 
             else:
                 o += ' something wrong in user registration!'
         # igreg()
@@ -145,11 +200,12 @@ def application(environ, start_response):
                         d[Bby], d[Bsr] = '%f' % (float(d[Bby]) - p), '%f' % (float(d[Bsr]) + p)
                     else:
                         d[Bby], d[Bsr] = '%f' % (float(d[Bby]) - p), '%f' % (float(d[Bsr]) + dt)
-                        for cst in tab[5:]:
+                        for i,cst in enumerate(tab[5:]):
                             Bcs = b'B_'+bytes(cst, 'utf8')
                             d[Bcs] = '%f' % (float(d[Bcs]) + rfd)
-                    d[Iig] += b'/' + bytes(byr, 'utf8') 
-                    d[Ttr] = '/'.join((td, byr, slr, '%s' % prc)) 
+                            d[bytes('T_%s_%04d' %(sig[:15],i), 'ascii')] = '/'.join((td, ig, 'refund', cst, '%s' % rfd)) 
+                    d[Iig] += b'/' + bytes(byr, 'utf8')
+                    d[Ttr] = '/'.join((td, ig, byr, slr, '%s' % p)) 
                     era = encrypt(RSA_E, b64toi(d[Pby]), bytes(tab[4], 'ascii'))
                     o, mime = era, 'application/pdf'
                 else:
@@ -170,6 +226,7 @@ def application(environ, start_response):
                 tab = d[Iig].decode('utf8').split('/')
                 if byr in tab[5:]:
                     o = '%d' % len(tab[5:]) # send number of customers
+                    o, mime = receipt('td', 'ig', 'owner', 'byr', 'url', 1, 'sig'), 'application/pdf'
                 else:
                     o += 'not client!'
             else:
@@ -179,14 +236,22 @@ def application(environ, start_response):
             own, sig = reg.v.group(2), reg.v.group(3)
             Bow, Pow = b'B_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
             if verify(RSA_E, b64toi(d[Pow]), ' '.join((own, today[:10])), bytes(sig, 'ascii')):
-                o, a = '%s\towner: %s\t\t         balance: \t%9.2f⊔\n' % (today[:19], own, float(d[Bow].decode('ascii'))), []
+                o, a, h = 'balance: \t%9.2f⊔\n' % (float(d[Bow].decode('ascii'))), [], {}
                 for x in d.keys():
                     if reg(re.match('T_(.*)$', x.decode('utf8'))):
                         tab = d[x].decode('utf8').split('/')
-                        if own in (tab[1], tab[2]):
-                            (t, tg) = ('\t', tab[2]) if own == tab[1] else ('\t'*3, tab[1])
-                            a.append('%s %s %25s%s%9.2f⊔\n' % (tab[0][:19], x[2:].decode('ascii'), tg, t, float(tab[3])))
-                o += ''.join(sorted(a, reverse=True))
+                        if own in (tab[2], tab[3]):
+                            tg = tab[3] if own == tab[2] else tab[2]
+                            try: tg.encode('ascii')
+                            except: tg = ('%s' % bytes(tg, 'utf8'))[2:-1]
+                            try: own.encode('ascii')
+                            except: own = ('%s' % bytes(own, 'utf8'))[2:-1]
+                            ig = tab[1]
+                            try: ig.encode('ascii')
+                            except: ig = ('%s' % bytes(ig, 'utf8'))[2:-1]
+                            k = ' '.join((tab[0][:19], x[2:].decode('ascii'), ig))
+                            h[k] = (True, tg, float(tab[4]) ) if own == tab[2] else (False, tg, float(tab[4]))
+                o, mime = pdf_statement(today[:19], own, float(d[Bow].decode('ascii')), h), 'application/pdf'
             else:
                 o += 'statement reading!'            
         elif way == 'get':
@@ -194,6 +259,8 @@ def application(environ, start_response):
                 o = open(__file__, 'r', encoding='utf8').read()
             elif raw.lower() in ('help', 'about'):
                 o = 'Welcome to ⊔net!\n\nHere is the Help in PDF format soon!'
+            elif raw.lower() in ('api',):
+                o = api()
             elif raw.lower() == 'reset':
                 subprocess.Popen(('rm', db)).communicate() # Of course this is only temporary available for testing!!!
                 o = 'RESET DATABASE OK!'
@@ -252,6 +319,7 @@ def frontpage(today, ip):
     o += '<a xlink:href="u?pi"     ><text class="note" x="99%" y="40"  title="at home!">Host</text></a>\n'            
     o += '<a xlink:href="bank?log" ><text class="note" x="99%" y="60"  title="log file">Log</text></a>\n'
     o += '<a xlink:href="bank?list"><text class="note" x="99%" y="80"  title="ig list">List</text></a>\n'
+    o += '<a xlink:href="bank?api"><text class="note" x="99%" y="100"  title="for developpers">API</text></a>\n'
     o += '<text class="note" x="50%%" y="98%%" title="you can use that server!">Status: <tspan fill="%s</tspan></text>\n' % ('green">OK' if (abs(ck) <= 0.00001) else 'red">Error!')
     o += '<text class="note" x="99%%" y="95%%" title="database|program" >Digest: %s|%s</text>\n' % (di.decode('utf8'), __digest__.decode('utf8'))
     o += '<text class="note" x="99%%" y="98%%" title="or visit \'%s\'">Contact: %s</text>\n' % (__url__, __email__) 
@@ -482,10 +550,11 @@ class updf:
         ref, kids, seenall, fref, h, firstp = [], '', {}, [], {}, 0
         for p, page in enumerate(document):
             t = bytes('BT 1 w 0.9 0.9 0.9 RG %s %s %s %s re S 0 0 0 RG 0 Tc ' % (self.mx, self.my, self.pw-2*self.mx, self.ph-2*self.my), 'ascii')
-            t += b'1.0 1.0 1.0 RG 0.8 0.9 1.0 rg 44 600 505 190 re B 0.0 0.0 0.0 rg '
+            t += b'0.99 0.99 0.99 rg 137 150 50 400 re f 137 100 321 50 re f 408 150 50 400 re f'
+            t += b'0.88 0.95 1.0 rg 44 600 505 190 re f '
             t += b'1.0 1.0 1.0 rg 1 0 0 1 60 680 Tm /F1 60 Tf (Put your Ads here)Tj 0.0 0.0 0.0 rg '
-            t += b'1.0 1.0 1.0 RG 0.6 0.6 0.6 rg 500 740 50 50 re B 0.0 0.0 0.0 rg '
-            t += b'1.0 1.0 1.0 rg 1 0 0 1 510 776 Tm 14 TL /F1 12 Tf (Ads)Tj T* (QR)Tj T* (Code)Tj 0.0 0.0 0.0 rg '
+            t += b'0.9 0.9 0.9 rg 499 740 50 50 re f '
+            t += b'1.0 1.0 1.0 rg 1 0 0 1 512 776 Tm 14 TL /F1 12 Tf (Ads)Tj T* (QR)Tj T* (Code)Tj 0.0 0.0 0.0 rg '
             for par in page: t += bytes(self.sgen(par), 'ascii')
             t += b'ET\n'
             #t1 = bytes('/P <</MCID 0>> BDC BT 1 0 0 1 10 20 Tm /F1 12 Tf (HELLO)Tj ET EMC /Link <</MCID 1>> BDC BT 1 0 0 1 100 20 Tm /F1 16 Tf (With a link)Tj ET EMC', 'ascii')
