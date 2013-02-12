@@ -32,8 +32,29 @@ __cur_ratio__ = {
     'GBP':[' £',  0.651,  0.672573,  0.702, 'Great Britain'], 
     'JPY':[' ¥', 85.104, 93.4582,   96.832, 'Japan'], 
     'CNY':[' Ұ',  6.405,  6.63024,   6.703, 'China'],
-    'BRL':['R$',  2.132,  2.158722,  2.275, 'Brasil'],
+    'BRL':['R$',  2.062,  2.158722,  2.175, 'Brasil'],
     }
+
+# add such currencies:
+__all_cur__ = {
+    'USD': None, 
+    'EUR': None,
+    'JPY': None,
+    'CAD': None,
+    'GBP': None,
+    'CHF': None,
+    'RUB': None,
+    'AUD': None,
+    'SEK': None,
+    'DKK': None,
+    'HKD': None,
+    'PLN': None,
+    'CNY': None,
+    'SGD': None,
+    'THB': None,
+    'NZD': None,
+    'NOK': None,
+}
 
 def utility():
     "_"
@@ -81,6 +102,23 @@ def get_today_rates():
     h['USDUSD'] = 1
     co.close()
     return h 
+
+def get_rates():
+    "_"
+    now, db = '%s' % datetime.datetime.now(), '/cup/rates'
+    if not os.path.isfile(db + '.db'):
+        dr = dbm.open(db, 'c')
+        dr['TODAY'] = b'hello'
+        dr.close()
+    dr = dbm.open(db, 'w')
+    if bytes(now[:10], 'ascii') not in dr.keys():
+        co, h = http.client.HTTPConnection('currencies.apps.grandtrunk.net'), {}
+        for c in __all_cur__:
+            if c != 'USD':
+                co.request('GET', '/getlatest/%s/USD' %c)
+                h[c+'USD'] = float(co.getresponse().read())
+        dr[now[:10]] = '%s' % h
+    dr.close()
 
 def test_cup_ratios():
     "_"
@@ -523,7 +561,8 @@ def application(environ, start_response):
     dtax.close()
     #if raw: o += "<pre>%s</pre>" % raw
     #o += "<pre>%s</pre>" % query
-    o += test_cup_ratios() 
+    #o += test_cup_ratios()
+    get_rates()
     o += foot(fr) + '</html>'
     start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))] + newcook)
     return [o.encode('utf-8')] 
