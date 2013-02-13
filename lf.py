@@ -200,7 +200,7 @@ def register(owner, iduser='anonymous', host='localhost', post=False):
     s = sign(ki[1], ki[2], ' '.join((td[:10], owner, iduser)))
     assert (verify(RSA_E, ki[2], ' '.join((td[:10], owner, iduser)), s))
     cmd = '/'.join(('reg', owner, iduser, kb[2].decode('ascii'), s.decode('ascii')))
-    return format_cmd(post, cmd)
+    return format_cmd(post, cmd, False, host)
 
 def igreg(owner, idig, p1, pf, host='localhost', post=False):
     "_"
@@ -209,7 +209,7 @@ def igreg(owner, idig, p1, pf, host='localhost', post=False):
     ds.close()
     s = sign(ki[1], ki[2], ' '.join((td[:10], owner, idig, '%s' % p1, '%s' % pf)))
     cmd = '/'.join(('ig', owner, idig, '%s' % p1, '%s' % pf, s.decode('ascii')))
-    era = format_cmd(post, cmd, True)
+    era = format_cmd(post, cmd, True, host)
     if era[:5] != b'Error':
         sk = decrypt(ki[1], ki[2], era)
         d = dbm.open('/cup/%s/keys' % __user__, 'c')
@@ -224,7 +224,7 @@ def buy(byr, ig, host='localhost', post=False):
     ds.close()
     s = sign(ki[1], ki[2], ' '.join((byr, ig, td)))
     cmd = '/'.join(('buy', byr, ig, td, s.decode('ascii')))
-    era = format_cmd(post, cmd, True)
+    era = format_cmd(post, cmd, True, host)
     if era[:5] != b'Error':
         sk = decrypt(ki[1], ki[2], era)
         print ('http://%s/%s?download/' % (host, __user__) + urllib.parse.quote(byr) + '/' + sk.decode('ascii'))
@@ -238,11 +238,12 @@ def statement(own, host='localhost', post=False):
     ds.close()
     s = sign(ki[1], ki[2], ' '.join((own, td[:10])))
     cmd = '/'.join(('statement', own, s.decode('ascii')))
-    return format_cmd(post, cmd, True)
+    return format_cmd(post, cmd, True, host)
 
 if __name__ == '__main__':
     print (__user__)
 
+    #host = 'pi.pelinquin.fr'
     host = 'localhost'
     ig = 'économie'
     b1, b2 = 'Laurent Fournier', 'Valérie Fournier'
@@ -253,10 +254,29 @@ if __name__ == '__main__':
     print(register(b2, 'fr274044732307944', host))
     print(igreg(slr, ig1, 10, 100, host))
     print(igreg(b1,  ig2, 10, 100, host))    
-    buy(b2, ig1, host)
-    buy(b1, ig1, host)
-    buy(b2, ig1, host)
-    buy(b2, ig2, host)
+
+
+    buy(b1, ig1, host) 
+    buy(b2, ig2, host) 
+    buy(b1, ig1, host) 
+    buy(b1, ig2, host) 
+    buy(b2, ig1, host) 
+    buy(b1, ig2, host) 
+    buy(b1, ig1, host) 
+    buy(b2, ig2, host) 
+    buy(b2, ig2, host) 
+    buy(b1, ig2, host) 
+    buy(b2, ig1, host) 
+    buy(b1, ig2, host) 
+    buy(b1, ig2, host) 
+    buy(b2, ig1, host) 
+    buy(b1, ig2, host) 
+    buy(b1, ig1, host) 
+    buy(b2, ig2, host) 
+    buy(b1, ig2, host) 
+
+    #subprocess.check_call(['convert', 'toto.pdf[0]', 'toto.jpg'])
+
 
     sys.exit()
 # End ⊔net!

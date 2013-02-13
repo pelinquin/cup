@@ -31,7 +31,7 @@ __fonts__ = ('Helvetica', 'Times-Roman', 'Courier', 'Times-Bold', 'Helvetica-Bol
 
 __email__ = 'laurent.fournier@cupfoundation.net'
 __url__   = 'http://cupfoundation.net'
-
+_XHTMLNS  = 'xmlns="http://www.w3.org/1999/xhtml"'
 _SVGNS    = 'xmlns="http://www.w3.org/2000/svg"'
 _XLINKNS  = 'xmlns:xlink="http://www.w3.org/1999/xlink"'
 RSA_E = 65537
@@ -80,22 +80,21 @@ def receipt(td, ig, slr, byr, url, ncl, sig):
 
 def pdf_statement(td, own, bal, h):
     "_"
-    url = 'http://cupfoundation.net'
-    tab = sorted(h.keys(), reverse=True)
-    label = '\n'.join(tab)
-    relat = '\n'.join(['%s\n' % h[x][1] for x in tab])
-    crdit = '\n'.join([('%09.2f' % h[x][2] if h[x][0] else ' ') for x in tab])
-    debit = '\n'.join([(' ' if h[x][0] else '%09.2f' % h[x][2]) for x in tab])
-    content = [[(410,  18, '12F1', td), 
-                (20,  20, '14F1', own), 
-                (20,  240, '14F1', 'Balance'), 
-                (430, 240, '10F6', '%9.2f' % bal), 
-                (20,  260, '8F3', label), 
-                (320, 260, '8F1', relat), 
-                (430, 260, '8F3', crdit), 
-                (480, 260, '8F3', debit), 
-                (10,  782, '8F1', url),
-                ]]
+    url, size, c1, c2, content, tabb = 'http://cupfoundation.net', 54, 430, 480, [], sorted(h.keys(), reverse=True)
+    tp = 1 + len(tabb)//size
+    for i in range(tp):
+        tab = tabb[i*size:(i+1)*size]
+        label = '\n'.join(tab)
+        relat = '\n'.join(['%s\n' % h[x][1] for x in tab])
+        crdit = '\n'.join([('%09.2f' % h[x][2] if h[x][0] else ' ') for x in tab])
+        debit = '\n'.join([(' ' if h[x][0] else '%09.2f' % h[x][2]) for x in tab])
+        t1, t2 = sum([(0 if h[x][0] else h[x][2]) for x in tab]), sum([(h[x][2] if h[x][0] else 0) for x in tab])
+        page = [(410,  18, '12F1', td), (20,  20, '14F1', own), 
+                (20,  250, '14F1', 'Balance'), (100, 250, '10F6', '%9.2f' % bal), (c1 if bal>0 else c2, 250, '8F3', '%09.2f' % abs(bal)),
+                (320, 240, '8F3', 'Volume'), (c1, 240, '8F6', '%09.2f' % t2), (c2, 240, '8F6', '%09.2f' % t1), 
+                (20,  260, '8F3', label), (320, 260, '8F1', relat), (c1, 260, '8F3', crdit), (c2, 260, '8F3', debit), 
+                (10,  782, '8F1', url), (500,  782, '8F1', 'page %d/%d' % (i+1, tp))]
+        content.append(page)
     a = updf(595, 842)
     return a.gen(content)
 
@@ -190,22 +189,24 @@ def application(environ, start_response):
                 if i == 0:
                     p = prc
                 else:
-                    p1, pf = float(tab[1]), float(tab[2])   # 6/ get nb, p1, pf
+                    p1, pf = float(tab[1]), float(tab[2])                    # 6/ get nb, p1, pf
                     k, xi = math.log(pf-p1) - math.log(pf-2*p1), .25          
                     p = (pf - (pf-p1)*math.exp(-xi*i*k))/(i+1)               # new price
                     dt = (pf-p1)*(math.exp(-xi*(i-1)*k) - math.exp(-xi*i*k)) # new delta
                     rfd = (p-dt)/i                                           # 7/ update prices
                 if float(d[Bby]) - p > - float(d[Oby]):
-                    if i == 0:
-                        d[Bby], d[Bsr] = '%f' % (float(d[Bby]) - p), '%f' % (float(d[Bsr]) + p)
-                    else:
-                        d[Bby], d[Bsr] = '%f' % (float(d[Bby]) - p), '%f' % (float(d[Bsr]) + dt)
-                        for i,cst in enumerate(tab[5:]):
+                    d[Bby] = '%f' % (float(d[Bby]) - p)
+                    d[Bsr] = '%f' % (float(d[Bsr]) + (p if i==0 else dt))
+                    if i != 0:
+                        for j, cst in enumerate(tab[5:]):
                             Bcs = b'B_'+bytes(cst, 'utf8')
                             d[Bcs] = '%f' % (float(d[Bcs]) + rfd)
-                            d[bytes('T_%s_%04d' %(sig[:15],i), 'ascii')] = '/'.join((td, ig, 'refund', cst, '%s' % rfd)) 
+                            d[bytes('T_%s_%04d' %(sig[:15], j), 'ascii')] = '/'.join((td, ig, 'refund', cst, '0', '%s' % rfd))
                     d[Iig] += b'/' + bytes(byr, 'utf8')
-                    d[Ttr] = '/'.join((td, ig, byr, slr, '%s' % p)) 
+                    if i == 0:
+                        d[Ttr] = '/'.join((td, ig, byr, slr, '%s' % p, '%s' % p)) 
+                    else:
+                        d[Ttr] = '/'.join((td, ig, byr, slr, '%s' % p, '%s' % dt)) 
                     era = encrypt(RSA_E, b64toi(d[Pby]), bytes(tab[4], 'ascii'))
                     o, mime = era, 'application/pdf'
                 else:
@@ -250,7 +251,10 @@ def application(environ, start_response):
                             try: ig.encode('ascii')
                             except: ig = ('%s' % bytes(ig, 'utf8'))[2:-1]
                             k = ' '.join((tab[0][:19], x[2:].decode('ascii'), ig))
-                            h[k] = (True, tg, float(tab[4]) ) if own == tab[2] else (False, tg, float(tab[4]))
+                            if tab[2] == tab[3]:
+                                h[k] = (True, tg, float(tab[4]) - float(tab[5]))
+                            else:
+                                h[k] = (True, tg, float(tab[4]) ) if own == tab[2] else (False, tg, float(tab[5]))
                 o, mime = pdf_statement(today[:19], own, float(d[Bow].decode('ascii')), h), 'application/pdf'
             else:
                 o += 'statement reading!'            
@@ -302,24 +306,28 @@ def frontpage(today, ip):
     d.close()
     o = '<?xml version="1.0" encoding="utf8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
-    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}</style>\n'
+    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}input{padding:5px;border:1px solid #D1D1D2;border-radius:10px;font-size:24px;}input[type="text"]{color:#999;}input[type="submit"]{color:#FFF;}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="80" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
     o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!" transform="rotate(-30 92,25)">Beta</text>\n'
-    o += '<text class="alpha" font-size="64pt" x="50%" y="33%"><tspan title="only http GET or POST!">No https, no html,</tspan><tspan x="50%" dy="100" title="only SVG and PDF!">no JavaScript,</tspan><tspan x="50%" dy="120" title="better privacy also!">better security!</tspan></text>\n'
+    o += '<text class="alpha" font-size="50pt" x="50%" y="40%"><tspan title="only HTTP (GET or POST), SVG and CSS!">No https, no html, no JavaScript,</tspan><tspan x="50%" dy="100" title="better privacy also!">better security!</tspan></text>\n'
+
     o += '<text class="foot" x="50%%" y="50" title="today">%s</text>\n' % today[:19]
     o += '<text class="foot" x="16%%" y="80%%" title="registered users">%04d users</text>\n' % nb
     o += '<text class="foot" x="38%%" y="80%%" title="">%06d transactions</text>\n' % tr
     o += '<text class="foot" x="62%%" y="80%%" title="number of registered Intangible Goods">%04d IGs</text>\n' % ni
     o += '<text class="foot" x="84%%" y="80%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % su
     o += '<a xlink:href="bank?src" ><text class="note" x="160" y="98%" title="on GitHub (https://github.com/pelinquin/cup) hack it, share it!">Download the source code!</text></a>\n'
+    o += '<foreignObject x="10" y="100" width="600" height="100"><div %s><form method="post">\n' % _XHTMLNS
+    o += '<input type="text" name="q"/><input type="submit" value="IG Search" title="Intangible Goods Search Request"/>\n'
+    o += '</form></div></foreignObject>\n'
     if ip == '127.0.0.1': 
         o += '<text class="note" x="160" y="90"  title="my ip adress">local server</text>\n'
-    o += '<a xlink:href="bank?help"><text class="note" x="99%" y="20"  title="help">Help</text></a>\n'
-    o += '<a xlink:href="u?pi"     ><text class="note" x="99%" y="40"  title="at home!">Host</text></a>\n'            
-    o += '<a xlink:href="bank?log" ><text class="note" x="99%" y="60"  title="log file">Log</text></a>\n'
-    o += '<a xlink:href="bank?list"><text class="note" x="99%" y="80"  title="ig list">List</text></a>\n'
-    o += '<a xlink:href="bank?api"><text class="note" x="99%" y="100"  title="for developpers">API</text></a>\n'
+    o += '<a xlink:href="bank?help"><text class="note" x="99%" y="20" title="help">Help</text></a>\n'
+    o += '<a xlink:href="u?pi"     ><text class="note" x="99%" y="40" title="at home!">Host</text></a>\n'            
+    o += '<a xlink:href="bank?log" ><text class="note" x="99%" y="60" title="log file">Log</text></a>\n'
+    o += '<a xlink:href="bank?list"><text class="note" x="99%" y="80" title="ig list">List</text></a>\n'
+    o += '<a xlink:href="bank?api"><text class="note" x="99%" y="100" title="for developpers">API</text></a>\n'
     o += '<text class="note" x="50%%" y="98%%" title="you can use that server!">Status: <tspan fill="%s</tspan></text>\n' % ('green">OK' if (abs(ck) <= 0.00001) else 'red">Error!')
     o += '<text class="note" x="99%%" y="95%%" title="database|program" >Digest: %s|%s</text>\n' % (di.decode('utf8'), __digest__.decode('utf8'))
     o += '<text class="note" x="99%%" y="98%%" title="or visit \'%s\'">Contact: %s</text>\n' % (__url__, __email__) 
