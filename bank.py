@@ -36,6 +36,7 @@ _SVGNS    = 'xmlns="http://www.w3.org/2000/svg"'
 _XLINKNS  = 'xmlns:xlink="http://www.w3.org/1999/xlink"'
 RSA_E = 65537
 MAX_ARG_SIZE = 2000
+PRECISION = .0001
 
 def reg(value):
     " function attribute is a way to access matching group in one line test "
@@ -293,17 +294,21 @@ def favicon():
 def frontpage(today, ip):
     "not in html!"
     d = dbm.open('/cup/bank')
-    nb, su, ck , tr, di, ni = 0, 0, 0, 0, d['__DIGEST__'], 0
+    nb, su, ck, tr, di, ni, v1, v2 = 0, 0, 0, 0, d['__DIGEST__'], 0, 0 ,0
     for x in d.keys():
-        if reg(re.match('B_(.*)$', x.decode('utf8'))):
+        if re.match('B_', x.decode('utf8')):
             nb += 1
             su += abs(float(d[x])/2)
             ck += float(d[x])
-        if reg(re.match('I_', x.decode('utf8'))):
+        elif re.match('I_', x.decode('utf8')):
             ni += 1
-        if reg(re.match('T_', x.decode('utf8'))):
+        elif re.match('T_', x.decode('utf8')):
+            tab = d[x].split(b'/')
+            v1 += float(tab[4])
+            v2 += float(tab[5])
             tr += 1
     d.close()
+    assert(abs(v1-v2) < PRECISION and abs(ck) < PRECISION)
     o = '<?xml version="1.0" encoding="utf8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
     o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}input{padding:5px;border:1px solid #D1D1D2;border-radius:10px;font-size:24px;}input[type="text"]{color:#999;}input[type="submit"]{color:#FFF;}</style>\n'
@@ -311,7 +316,6 @@ def frontpage(today, ip):
     o += '<text x="80" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
     o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!" transform="rotate(-30 92,25)">Beta</text>\n'
     o += '<text class="alpha" font-size="50pt" x="50%" y="40%"><tspan title="only HTTP (GET or POST), SVG and CSS!">No https, no html, no JavaScript,</tspan><tspan x="50%" dy="100" title="better privacy also!">better security!</tspan></text>\n'
-
     o += '<text class="foot" x="50%%" y="50" title="today">%s</text>\n' % today[:19]
     o += '<text class="foot" x="16%%" y="80%%" title="registered users">%04d users</text>\n' % nb
     o += '<text class="foot" x="38%%" y="80%%" title="">%06d transactions</text>\n' % tr
@@ -328,7 +332,7 @@ def frontpage(today, ip):
     o += '<a xlink:href="bank?log" ><text class="note" x="99%" y="60" title="log file">Log</text></a>\n'
     o += '<a xlink:href="bank?list"><text class="note" x="99%" y="80" title="ig list">List</text></a>\n'
     o += '<a xlink:href="bank?api"><text class="note" x="99%" y="100" title="for developpers">API</text></a>\n'
-    o += '<text class="note" x="50%%" y="98%%" title="you can use that server!">Status: <tspan fill="%s</tspan></text>\n' % ('green">OK' if (abs(ck) <= 0.00001) else 'red">Error!')
+    o += '<text class="note" x="50%%" y="98%%" title="you can use that server!">Status: <tspan fill="%s</tspan></text>\n' % ('green">OK' if (abs(ck) < PRECISION) else 'red">Error!')
     o += '<text class="note" x="99%%" y="95%%" title="database|program" >Digest: %s|%s</text>\n' % (di.decode('utf8'), __digest__.decode('utf8'))
     o += '<text class="note" x="99%%" y="98%%" title="or visit \'%s\'">Contact: %s</text>\n' % (__url__, __email__) 
     return o + '</svg>'
