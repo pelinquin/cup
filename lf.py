@@ -240,9 +240,16 @@ def statement(own, host='localhost', post=False):
     cmd = '/'.join(('statement', own, s.decode('ascii')))
     return format_cmd(post, cmd, True, host)
 
-if __name__ == '__main__':
-    print (__user__)
+def playlist(own, host='localhost', post=False):
+    "_"
+    td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
+    ki = [b64toi(x) for x in ds[own].split()]
+    ds.close()
+    s = sign(ki[1], ki[2], ' '.join((own, td[:10])))
+    cmd = '/'.join(('playlist', own, s.decode('ascii')))
+    return format_cmd(post, cmd, False, host)
 
+if __name__ == '__main__':
     #host = 'pi.pelinquin.fr'
     host = 'localhost'
     ig = 'économie'
@@ -259,21 +266,6 @@ if __name__ == '__main__':
     buy(b1, ig1, host) 
     buy(b2, ig2, host) 
     buy(b1, ig1, host) 
-    buy(b1, ig2, host) 
-    buy(b2, ig1, host) 
-    buy(b1, ig2, host) 
-    buy(b1, ig1, host) 
-    buy(b2, ig2, host) 
-    buy(b2, ig2, host) 
-    buy(b1, ig2, host) 
-    buy(b2, ig1, host) 
-    buy(b1, ig2, host) 
-    buy(b1, ig2, host) 
-    buy(b2, ig1, host) 
-    buy(b1, ig2, host) 
-    buy(b1, ig1, host) 
-    buy(b2, ig2, host) 
-    buy(b1, ig2, host) 
 
     #subprocess.check_call(['convert', 'toto.pdf[0]', 'toto.jpg'])
 

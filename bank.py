@@ -79,21 +79,22 @@ def receipt(td, ig, slr, byr, url, ncl, sig):
     a = updf(595, 842)
     return a.gen(content)
 
-def pdf_statement(td, own, bal, h):
+def pdf_statement(td, own, bal, ovd, h):
     "_"
     url, size, c1, c2, content, tabb = 'http://cupfoundation.net', 54, 430, 480, [], sorted(h.keys(), reverse=True)
     tp = 1 + len(tabb)//size
     for i in range(tp):
         tab = tabb[i*size:(i+1)*size]
         label = '\n'.join(tab)
-        relat = '\n'.join(['%s\n' % h[x][1] for x in tab])
-        crdit = '\n'.join([('%09.2f' % h[x][2] if h[x][0] else ' ') for x in tab])
-        debit = '\n'.join([(' ' if h[x][0] else '%09.2f' % h[x][2]) for x in tab])
-        t1, t2 = sum([(0 if h[x][0] else h[x][2]) for x in tab]), sum([(h[x][2] if h[x][0] else 0) for x in tab])
-        page = [(410,  18, '12F1', td), (20,  20, '14F1', own), 
-                (20,  250, '14F1', 'Balance'), (100, 250, '10F6', '%9.2f' % bal), (c1 if bal>0 else c2, 250, '8F3', '%09.2f' % abs(bal)),
+        relat = '\n'.join(['%s\n' % h[x][2] for x in tab])
+        ig    = '\n'.join(['%s\n' % h[x][1] for x in tab])        
+        crdit = '\n'.join([('%09.2f' % h[x][3] if h[x][0] else ' ') for x in tab])
+        debit = '\n'.join([(' ' if h[x][0] else '%09.2f' % h[x][3]) for x in tab])
+        t1, t2 = sum([(0 if h[x][0] else h[x][3]) for x in tab]), sum([(h[x][3] if h[x][0] else 0) for x in tab])
+        page = [(410,  18, '12F1', td), (20,  20, '14F1', own), (20,  230, '10F1', 'Overdraft:'), (80,  230, '10F3', '%9.0f' % ovd), 
+                (20,  250, '14F1', 'Balance:'), (80, 250, '10F6', '%9.2f' % bal), (c1 if bal>0 else c2, 250, '8F3', '%09.2f' % abs(bal)),
                 (320, 240, '8F3', 'Volume'), (c1, 240, '8F6', '%09.2f' % t2), (c2, 240, '8F6', '%09.2f' % t1), 
-                (20,  260, '8F3', label), (320, 260, '8F1', relat), (c1, 260, '8F3', crdit), (c2, 260, '8F3', debit), 
+                (20,  260, '8F3', label), (220, 260, '8F1', ig), (320, 260, '8F1', relat), (c1, 260, '8F3', crdit), (c2, 260, '8F3', debit), 
                 (10,  782, '8F1', url), (500,  782, '8F1', 'page %d/%d' % (i+1, tp))]
         content.append(page)
     a = updf(595, 842)
@@ -144,7 +145,7 @@ def application(environ, start_response):
     d = dbm.open(db[:-3], 'c')
     if len(raw) < MAX_ARG_SIZE:
         # register()
-        if reg(re.match(r'^(user|reg|register)/([^/]{3,50})/([^/]{9,17})/([^/]{680,685})/([^/]{680,685})$', raw, re.U)):
+        if reg(re.match(r'^(user|reg|register)/([^/]{3,50})/([^/]{3,17})/([^/]{680,685})/([^/]{680,685})$', raw, re.U)):
             # checks both id and public key not already used and local id is valid
             own, uid, pbk, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
             Por, Bor, Oor, Tor, Uid = b'P_' + bytes(own, 'utf8'), b'B_' + bytes(own, 'utf8'), b'O_' + bytes(own, 'utf8'), b'T_' + bytes(own, 'utf8'), b'U_' + bytes(uid, 'utf8')
@@ -153,16 +154,15 @@ def application(environ, start_response):
             elif (uid != 'anonymous') and (Uid in d.keys()):
                 o += 'user id already registered for %s !' % own 
             elif verify(RSA_E, b64toi(bytes(pbk, 'ascii')), ' '.join((today[:10], own, uid)), bytes(sig, 'ascii')):
-                d[Oor] = '100' if uid != 'anonymous' and uid[:2] == 'fr' and int(uid[-2:]) == (97 - int(uid[2:-2])%97) else '0' # french id!
+                d[Oor] = '100' if reg(re.match('^fr\d{15}$', uid)) and int(uid[-2:]) == (97 - int(uid[2:-2])%97) else '0' # french id!                    
                 d[Por], d[Bor], d[Uid], o = pbk, '0', own, 'Public key id registration OK for \'%s\'' % own 
-                #d[Tor] = '/'.join((today, ' ', 'Initial', own, d[Oor].decode('utf8'))) 
             else:
                 o += ' something wrong in user registration!'
         # igreg()
         elif reg(re.match(r'^(ig|igreg|immaterial|good)/([^/]{3,50})/([^/]{3,80})/([^/]{1,12})/([^/]{1,12})/([^/]{680,685})$', raw, re.U)): 
             # checks
             own, iid, p1, pf, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6)
-            Iig, Ppk = b'I_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf8')
+            Iig, Cig, Ppk = b'I_' + bytes(iid, 'utf8'), b'C_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf8')
             if Iig in d.keys():
                 o += 'IG id already set!'
             elif float(p1)<0 or float(pf)<float(1):
@@ -171,7 +171,7 @@ def application(environ, start_response):
                 ra = os.urandom(16)
                 akey = itob64(int(binascii.hexlify(os.urandom(16)), 16))
                 era = encrypt(RSA_E, b64toi(d[Ppk]), akey)
-                d[Iig] = '/'.join((today[:10], p1, pf, own, akey.decode('ascii')))
+                d[Iig], d[Cig] = '/'.join((today[:10], p1, pf, own, akey.decode('ascii'))), b' '
                 #o = 'IG id registration OK from \'%s\'' % own
                 o, mime = era, 'application/pdf'
             else:
@@ -181,12 +181,12 @@ def application(environ, start_response):
             # checks 
             byr, ig, td, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
             Bby, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'ascii'), 
-            Iig = b'I_' + bytes(ig, 'utf8')
+            Iig, Cig = b'I_' + bytes(ig, 'utf8'), b'C_' + bytes(ig, 'utf8')
             if verify(RSA_E, b64toi(d[Pby]), ' '.join((byr, ig, td)), bytes(sig, 'ascii')) and Iig in d.keys() and not (Ttr in d.keys()):
-                tab = d[Iig].decode('utf8').split('/')
+                tab, tac = d[Iig].decode('utf8').split('/'), d[Cig].decode('utf8').split('/')
                 prc, slr = float(tab[1]), tab[3]
                 Bsr = b'B_'+bytes(slr, 'utf8')
-                i = len(tab[5:])
+                i = len(tac)-1
                 if i == 0:
                     p = prc
                 else:
@@ -199,15 +199,12 @@ def application(environ, start_response):
                     d[Bby] = '%f' % (float(d[Bby]) - p)
                     d[Bsr] = '%f' % (float(d[Bsr]) + (p if i==0 else dt))
                     if i != 0:
-                        for j, cst in enumerate(tab[5:]):
+                        for j, cst in enumerate(tac[1:]):
                             Bcs = b'B_'+bytes(cst, 'utf8')
                             d[Bcs] = '%f' % (float(d[Bcs]) + rfd)
                             d[bytes('T_%s_%04d' %(sig[:15], j), 'ascii')] = '/'.join((td, ig, 'refund', cst, '0', '%s' % rfd))
-                    d[Iig] += b'/' + bytes(byr, 'utf8')
-                    if i == 0:
-                        d[Ttr] = '/'.join((td, ig, byr, slr, '%s' % p, '%s' % p)) 
-                    else:
-                        d[Ttr] = '/'.join((td, ig, byr, slr, '%s' % p, '%s' % dt)) 
+                    d[Cig] += b'/' + bytes(byr, 'utf8')
+                    d[Ttr] = '/'.join((td, ig, byr, slr, '%s' % p, '%s' % (p if i== 0 else dt))) 
                     era = encrypt(RSA_E, b64toi(d[Pby]), bytes(tab[4], 'ascii'))
                     o, mime = era, 'application/pdf'
                 else:
@@ -223,20 +220,32 @@ def application(environ, start_response):
         elif reg(re.match(r'^(isclient)/([^/]{3,50})/([^/]{3,50})/([^/]{3,80})/([^/]{680,685})$', raw, re.U)):
             # checks 
             slr, byr, ig, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
-            Psl, Iig = b'P_' + bytes(slr, 'utf8'), b'I_' + bytes(ig, 'utf8') 
+            Psl, Cig = b'P_' + bytes(slr, 'utf8'), b'C_' + bytes(ig, 'utf8') 
             if verify(RSA_E, b64toi(d[Psl]), '/'.join((slr, byr, ig, today[:10])), bytes(sig, 'ascii')):
-                tab = d[Iig].decode('utf8').split('/')
-                if byr in tab[5:]:
-                    o = '%d' % len(tab[5:]) # send number of customers
+                tac = d[Cig].decode('utf8').split('/')
+                if len(tac)>1 and byr in tac:
+                    o = '%d' % len(tac)-1 # send number of customers
                     o, mime = receipt('td', 'ig', 'owner', 'byr', 'url', 1, 'sig'), 'application/pdf'
                 else:
                     o += 'not client!'
             else:
                 o += 'bad signature!'
+        # playlist()
+        elif reg(re.match(r'^(playlist)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
+            owr, sig, res = reg.v.group(2), reg.v.group(3), ''
+            Por = b'P_' + bytes(owr, 'utf8') 
+            if verify(RSA_E, b64toi(d[Por]), '/'.join((owr, today[:10])), bytes(sig, 'ascii')):
+                for x in d.keys():
+                    if reg(re.match('C_(.*)$', x.decode('utf8'))):
+                        if owr in d[x].decode('utf8').split('/'):
+                            res += '/' + reg.v.group(1)
+                o = res
+            else:
+                o += 'playlist empty!'
         # statement()
-        elif reg(re.match(r'^(state|statement|balance)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
+        elif reg(re.match(r'^(state|statement)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
             own, sig = reg.v.group(2), reg.v.group(3)
-            Bow, Pow = b'B_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
+            Bow, Oow, Pow = b'B_'+bytes(own, 'utf8'), b'O_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
             if verify(RSA_E, b64toi(d[Pow]), ' '.join((own, today[:10])), bytes(sig, 'ascii')):
                 o, a, h = 'balance: \t%9.2f⊔\n' % (float(d[Bow].decode('ascii'))), [], {}
                 for x in d.keys():
@@ -246,19 +255,27 @@ def application(environ, start_response):
                             tg = tab[3] if own == tab[2] else tab[2]
                             try: tg.encode('ascii')
                             except: tg = ('%s' % bytes(tg, 'utf8'))[2:-1]
-                            try: own.encode('ascii')
-                            except: own = ('%s' % bytes(own, 'utf8'))[2:-1]
-                            ig = tab[1]
+                            try: own1 = own.encode('ascii')
+                            except: own1 = ('%s' % bytes(own, 'utf8'))[2:-1]
+                            ig = tab[1][:-4]
                             try: ig.encode('ascii')
                             except: ig = ('%s' % bytes(ig, 'utf8'))[2:-1]
-                            k = ' '.join((tab[0][:19], x[2:].decode('ascii'), ig))
+                            k = ' '.join((tab[0][:19], x[2:].decode('ascii')))
                             if tab[2] == tab[3]:
-                                h[k] = (True, tg, float(tab[4]) - float(tab[5]))
+                                h[k] = (True, ig, tg, float(tab[4]) - float(tab[5]))
                             else:
-                                h[k] = (True, tg, float(tab[4]) ) if own == tab[2] else (False, tg, float(tab[5]))
-                o, mime = pdf_statement(today[:19], own, float(d[Bow].decode('ascii')), h), 'application/pdf'
+                                h[k] = (True, ig, tg, float(tab[4])) if own1 == tab[2] else (False, ig, tg, float(tab[5]))
+                o, mime = pdf_statement(today[:19], own1, float(d[Bow].decode('ascii')), float(d[Oow].decode('ascii')), h), 'application/pdf'
             else:
                 o += 'statement reading!'            
+        # balance()
+        elif reg(re.match(r'^(balance)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
+            own, sig = reg.v.group(2), reg.v.group(3)
+            Bow, Pow = b'B_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
+            if verify(RSA_E, b64toi(d[Pow]), ' '.join((own, today[:10])), bytes(sig, 'ascii')):
+                o = '%9.2f' % float(d[Bow].decode('ascii'))
+            else:
+                o += 'balance reading!'            
         elif way == 'get':
             if raw.lower() in ('source', 'src'):
                 o = open(__file__, 'r', encoding='utf8').read()
@@ -271,12 +288,14 @@ def application(environ, start_response):
                 o = 'RESET DATABASE OK!'
             elif raw.lower() in ('log',):
                 o = open('/cup/log', 'r', encoding='utf8').read()                
-            elif raw.lower() in ('list',):
+            elif raw.lower() in ('list', 'raw'):
                 o = ''
                 for x in d.keys():
                     if reg(re.match('I_(.*)$', x.decode('utf8'))):
                         tab = d[x].decode('utf8').split('/')
-                        o += '%s\t%20s\t%7.2f⊔%9.2f\n' % (tab[0], x[2:].decode('utf8'), float(tab[1]), float(tab[2]))
+                        cu = 'C_' + reg.v.group(1)
+                        if bytes(cu, 'utf8') in d.keys():
+                            o += '%s/%s/%s\n' % (x[2:].decode('utf8'), '/'.join(tab[:-1]), len(d[cu].split(b'/'))-1)
             else:
                 o, mime = frontpage(today, environ['REMOTE_ADDR']), 'application/xhtml+xml; charset=utf8'
     else:
