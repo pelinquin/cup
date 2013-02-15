@@ -22,7 +22,7 @@
 
 __owner__ = 'Laurent Fournier'
 
-import re, os, sys, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools, subprocess
+import re, os, sys, math, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools, subprocess
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES
 
@@ -63,7 +63,6 @@ def application(environ, start_response):
     init_db(db)
     if environ['REQUEST_METHOD'].lower() == 'post':
         raw, way = environ['wsgi.input'].read(), 'post'        
-        #ncok = [('set-cookie', 'fr=%s' % fr)]
     else:
         raw, way = urllib.parse.unquote(environ['QUERY_STRING']), 'get'
     fr = 'on' if 'HTTP_COOKIE' in environ and re.search(r'fr=on', environ['HTTP_COOKIE']) else None
@@ -75,15 +74,16 @@ def application(environ, start_response):
                 login, sid, pw1, pw2 = reg.v.group(1), reg.v.group(2), reg.v.group(3), reg.v.group(4)
                 if len(login)>2 and len(pw1)>3 and pw1==pw2 and pw1!=login and not login.encode('utf8') in d.keys():
                     ncok = [('set-cookie', 'user=%s' % login)]
+                    #d['PW_'+login] = hashlib.sha1('%s/%s' % (login.encode('utf8'),pw1.encode('utf8'))).hexdigest()
                     d['PW_'+login] = hashlib.sha1(pw1.encode('utf8')).hexdigest()
                     k = RSA.generate(4096, os.urandom)
                     d['PK_' + login] = bytes(' '.join([itob64(x).decode('ascii') for x in (k.e, k.d, k.n)]), 'ascii')
                     ki, kb = [b64toi(x) for x in d['PK_' + login].split()], [x for x in d['PK_' + login].split()]
-                    register(login, ki, kb, sid) #'fr167071927202809'
+                    register(login, ki, kb, sid) 
                     o, mime = frontpage(today, environ['REMOTE_ADDR'], d, fr, login), 'application/xhtml+xml; charset=utf8'
             elif reg(re.match('lg=([^&]+)&pw1=(.+)$', urllib.parse.unquote(raw.decode('utf8')))):
                 login, pw = reg.v.group(1), reg.v.group(2)
-                if b'PW_' + login.encode('utf8') in d.keys() and d['PW_'+login] == hashlib.sha1(pw.encode('utf8')).hexdigest().encode('utf8'):
+                if b'PW_'+login.encode('utf8') in d.keys() and d['PW_'+login] == hashlib.sha1(pw.encode('utf8')).hexdigest().encode('utf8'):
                     ncok = [('set-cookie', 'user=%s' % login)]
                     o, mime = frontpage(today, environ['REMOTE_ADDR'], d, fr, login), 'application/xhtml+xml; charset=utf8'  
                 else:
@@ -144,7 +144,7 @@ def frontpage(today, ip, d, fr, login=''):
     "not in html!"
     o = '<?xml version="1.0" encoding="utf8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
-    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}a{fill:Dodgerblue;}text.foot{font-size:18pt;fill:gray;text-anchor:start;}text.foot1{font-size:12pt;fill:gray;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:start;}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}input,button{padding:2px;margin:1px;border:1px solid #D1D1D2;border-radius:3px;font-size:12px;}input[type="text"],input[type="password"]{color:#999;width:66px;}input[type="submit"],button{color:#fff}input[type="file"]{color:#999;}</style>\n'
+    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}a{fill:Dodgerblue;}text.foot{font-size:16pt;fill:gray;text-anchor:start;}text.foot1{font-size:12pt;fill:gray;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:start;}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}input,button{padding:2px;margin:1px;border:1px solid #D1D1D2;border-radius:3px;font-size:12px;}input[type="text"],input[type="password"]{color:#999;width:66px;}input[type="submit"],button{color:#fff}input[type="file"]{color:#999;}input[type="submit"].blue{background-color:Dodgerblue;}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="80" y="70" font-size="45">%s</text>\n' % __user__
     if login:
@@ -192,19 +192,22 @@ def frontpage(today, ip, d, fr, login=''):
         tab = x.split('/')
         if os.path.isfile (bytes('/cup/%s/%s' % (__user__, tab[0]), 'utf8')):
             i +=1
-            o += '<text class="note" x="420" y="%s">%s</text>\n' % (110+30*i, tab[1])
-            o += '<text class="note" x="480" y="%s">%s</text>\n' % (110+30*i, tab[4])
-            o += '<text class="note" x="70" y="%s">%s</text>\n' % (110+30*i, tab[5])
-            o += '<foreignObject x="10" y="%s" width="100" height="30"><div %s><form method="post">\n' % (90+30*i, _XHTMLNS)
+            p1, pf, n = float(tab[2]), float(tab[3]), int(tab[5])
+            k, xi = math.log(pf-p1) - math.log(pf-2*p1), .25          
+            price = (pf - (pf-p1)*math.exp(-xi*n*k))/(n+1)               
+            o += '<text class="note" x="480" y="%s">%s</text>\n' % (110+30*i, tab[1])
+            o += '<text class="note" x="540" y="%s" title="author">%s</text>\n' % (110+30*i, tab[4])
+            o += '<text class="note" x="102" y="%s" title="number of buyers">%04d</text>\n' % (110+30*i, int(tab[5]))
+            o += '<foreignObject x="10" y="%s" width="80" height="30"><div %s><form method="post">\n' % (90+30*i, _XHTMLNS)
             o += '<input type="hidden" name="ig" value="%s"/>\n' % tab[0]        
-            o += '<input type="submit" name="buy" value="%s⊔" title="max income: %s⊔"/>\n' % (tab[2], tab[3])        
+            o += '<input type="submit" name="buy" value="%7.2f⊔" title="max income: %s⊔"/>\n' % (price, tab[3])        
             o += '</form></div></foreignObject>\n'
             if tab[0] in pl:
-                o += '<foreignObject x="90" y="%s" width="100" height="30"><div %s><form method="post">\n' % (90+30*i, _XHTMLNS)
-                o += '<input type="submit" name="get" value="%s"/>\n' % (tab[0][:-4])        
+                o += '<foreignObject x="120" y="%s" width="100" height="30"><div %s><form method="post">\n' % (90+30*i, _XHTMLNS)
+                o += '<input class="blue" type="submit" name="get" value="%s"/>\n' % (tab[0][:-4])        
                 o += '</form></div></foreignObject>\n'
             else:
-                o += '<text class="foot" x="90" y="%s">%s</text>\n' % (110+30*i, tab[0][:-4])                
+                o += '<text class="foot" x="120" y="%s">%s</text>\n' % (110+30*i, tab[0][:-4])                
     o += '<text class="note" x="99%%" y="98%%" title="or visit \'%s\'">Contact: %s</text>\n' % (__url__, __email__) 
     return o + '</svg>'
 
@@ -326,5 +329,12 @@ def balance(own, ki, host='localhost', post=False):
 if __name__ == '__main__':
     print (__user__)
 
+    d = dbm.open('/cup/node/keys')
+    login = 'laurent'
+    ki = [b64toi(x) for x in d['PK_' + login].split()]
+    d.close()
+    content = statement(login, ki)
+    open(bytes ('toto.pdf', 'utf8'), 'wb').write(content)
+    
     sys.exit()
 # End ⊔net!

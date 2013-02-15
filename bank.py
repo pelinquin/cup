@@ -91,7 +91,8 @@ def pdf_statement(td, own, bal, ovd, h):
         crdit = '\n'.join([('%09.2f' % h[x][3] if h[x][0] else ' ') for x in tab])
         debit = '\n'.join([(' ' if h[x][0] else '%09.2f' % h[x][3]) for x in tab])
         t1, t2 = sum([(0 if h[x][0] else h[x][3]) for x in tab]), sum([(h[x][3] if h[x][0] else 0) for x in tab])
-        page = [(410,  18, '12F1', td), (20,  20, '14F1', own), (20,  230, '10F1', 'Overdraft:'), (80,  230, '10F3', '%9.0f' % ovd), 
+        page = [(410,  18, '12F1', td), 
+                (20,  20, '14F1', own), (20,  230, '10F1', 'Overdraft:'), (80,  230, '10F3', '%9.0f' % ovd), 
                 (20,  250, '14F1', 'Balance:'), (80, 250, '10F6', '%9.2f' % bal), (c1 if bal>0 else c2, 250, '8F3', '%09.2f' % abs(bal)),
                 (320, 240, '8F3', 'Volume'), (c1, 240, '8F6', '%09.2f' % t2), (c2, 240, '8F6', '%09.2f' % t1), 
                 (20,  260, '8F3', label), (220, 260, '8F1', ig), (320, 260, '8F1', relat), (c1, 260, '8F3', crdit), (c2, 260, '8F3', debit), 
@@ -255,8 +256,6 @@ def application(environ, start_response):
                             tg = tab[3] if own == tab[2] else tab[2]
                             try: tg.encode('ascii')
                             except: tg = ('%s' % bytes(tg, 'utf8'))[2:-1]
-                            try: own1 = own.encode('ascii')
-                            except: own1 = ('%s' % bytes(own, 'utf8'))[2:-1]
                             ig = tab[1][:-4]
                             try: ig.encode('ascii')
                             except: ig = ('%s' % bytes(ig, 'utf8'))[2:-1]
@@ -264,7 +263,10 @@ def application(environ, start_response):
                             if tab[2] == tab[3]:
                                 h[k] = (True, ig, tg, float(tab[4]) - float(tab[5]))
                             else:
-                                h[k] = (True, ig, tg, float(tab[4])) if own1 == tab[2] else (False, ig, tg, float(tab[5]))
+                                h[k] = (True, ig, tg, float(tab[4])) if own == tab[2] else (False, ig, tg, float(tab[5]))
+                own1 = own
+                try: own1.encode('ascii')
+                except: own1 = ('%s' % bytes(own1, 'utf8'))[2:-1]
                 o, mime = pdf_statement(today[:19], own1, float(d[Bow].decode('ascii')), float(d[Oow].decode('ascii')), h), 'application/pdf'
             else:
                 o += 'statement reading!'            
@@ -581,7 +583,7 @@ class updf:
         ref, kids, seenall, fref, h, firstp = [], '', {}, [], {}, 0
         for p, page in enumerate(document):
             t = bytes('BT 1 w 0.9 0.9 0.9 RG %s %s %s %s re S 0 0 0 RG 0 Tc ' % (self.mx, self.my, self.pw-2*self.mx, self.ph-2*self.my), 'ascii')
-            t += b'0.99 0.99 0.99 rg 137 150 50 400 re f 137 100 321 50 re f 408 150 50 400 re f'
+            t += b'0.99 0.99 0.99 rg 137 150 50 400 re f 137 100 321 50 re f 408 150 50 400 re f '
             t += b'0.88 0.95 1.0 rg 44 600 505 190 re f '
             t += b'1.0 1.0 1.0 rg 1 0 0 1 60 680 Tm /F1 60 Tf (Put your Ads here)Tj 0.0 0.0 0.0 rg '
             t += b'0.9 0.9 0.9 rg 499 740 50 50 re f '
