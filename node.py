@@ -158,11 +158,12 @@ def frontpage(today, ip, d, fr, login=''):
     "not in html!"
     o = '<?xml version="1.0" encoding="utf8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
-    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}a{fill:Dodgerblue;}text.foot{font-size:14pt;fill:gray;text-anchor:start;}text.foot1{font-size:12pt;fill:gray;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:start;}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}input,button{padding:2px;margin:1px;border:1px solid #D1D1D2;border-radius:3px;font-size:12px;}input[type="text"],input[type="password"]{color:#999;width:66px;}input[type="submit"],button{color:#fff}input[type="file"]{color:#999;}input[type="submit"].blue{background-color:Dodgerblue;font-size:14pt;border-radius:8px}</style>\n'
+    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}a,text.a{fill:Dodgerblue;}text.foot{font-size:14pt;fill:gray;text-anchor:start;}text.foot1{font-size:12pt;fill:gray;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:start;}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}input,button{padding:2px;margin:1px;border:1px solid #D1D1D2;border-radius:3px;font-size:12px;}input[type="text"],input[type="password"]{color:#999;width:66px;}input[type="submit"],button{color:#fff}input[type="file"]{color:#999;}input[type="submit"].blue{background-color:Dodgerblue;font-size:14pt;border-radius:8px}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="80" y="70" font-size="45">%s</text>\n' % __user__
     if login:
         o += '<text class="alpha" font-size="50pt" x="510" y="70">%s</text>\n' % login
+        o += '<a xlink:href="/bank"><text class="a" x="120" y="30">Bank</text></a>\n'
 
         o += '<foreignObject x="92%%" y="10" width="100" height="30"><div %s><form method="post">\n' % _XHTMLNS
         o += '<input class="right" type="submit" name="act" value="logout"/>\n'        
@@ -176,7 +177,7 @@ def frontpage(today, ip, d, fr, login=''):
         o += '<input type="submit" name="act" value="statement"/>\n'        
         o += '</form></div></foreignObject>\n'
 
-        o += '<foreignObject x="92%%" y="70" width="100" height="70"><div %s><form method="post">\n' % _XHTMLNS
+        o += '<foreignObject x="92%%" y="90" width="100" height="70"><div %s><form method="post">\n' % _XHTMLNS
         o += '<input type="text" name="val" placeholder="amount" required="yes" title="in your overdraft limit!"/>⊔ <br/>'
         o += '<input type="submit" name="act" value="invoice"/>\n'        
         o += '</form></div></foreignObject>\n'
@@ -223,10 +224,10 @@ def frontpage(today, ip, d, fr, login=''):
             o += '<input type="submit" name="buy" value="%7.2f⊔" title="max income: %s⊔"/>\n' % (price, tab[3])        
             o += '</form></div></foreignObject>\n'
             if tab[0] in pl:
-                o += '<foreignObject x="120" y="%s" width="100" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
+                o += '<foreignObject x="120" y="%s" width="200" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
                 o += '<input class="blue" type="submit" name="get" value="%s"/>\n' % (tab[0][:-4])        
                 o += '</form></div></foreignObject>\n'
-                o += '<foreignObject x="560" y="%s" width="100" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
+                o += '<foreignObject x="560" y="%s" width="60" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
                 o += '<input type="submit" name="rcp" value="receipt"/>\n'         
                 o += '</form></div></foreignObject>\n'
             else:

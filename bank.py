@@ -332,11 +332,10 @@ def favicon():
 def frontpage(today, ip):
     "not in html!"
     d = dbm.open('/cup/bank')
-    nb, su, ck, tr, di, ni, v1, v2 = 0, 0, 0, 0, d['__DIGEST__'], 0, 0 ,0
+    nb, ck, tr, di, ni, v1, v2 = 0, 0, 0, d['__DIGEST__'], 0, 0 ,0
     for x in d.keys():
         if re.match('B_', x.decode('utf8')):
             nb += 1
-            su += abs(float(d[x])/2)
             ck += float(d[x])
         elif re.match('I_', x.decode('utf8')):
             ni += 1
@@ -358,7 +357,7 @@ def frontpage(today, ip):
     o += '<text class="foot" x="16%%" y="80%%" title="registered users">%04d users</text>\n' % nb
     o += '<text class="foot" x="38%%" y="80%%" title="">%06d transactions</text>\n' % tr
     o += '<text class="foot" x="62%%" y="80%%" title="number of registered Intangible Goods">%04d IGs</text>\n' % ni
-    o += '<text class="foot" x="84%%" y="80%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % su
+    o += '<text class="foot" x="84%%" y="80%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % v1
     o += '<a xlink:href="bank?src" ><text class="note" x="160" y="98%" title="on GitHub (https://github.com/pelinquin/cup) hack it, share it!">Download the source code!</text></a>\n'
     o += '<foreignObject x="10" y="100" width="600" height="100"><div %s><form method="post">\n' % _XHTMLNS
     o += '<input type="text" name="q"/><input type="submit" value="IG Search" title="Intangible Goods Search Request"/>\n'
