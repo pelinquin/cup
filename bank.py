@@ -85,7 +85,7 @@ def pdf_statement(td, own, bal, ovd, h):
     tp = 1 + len(tabb)//size
     for i in range(tp):
         tab = tabb[i*size:(i+1)*size]
-        label = '\n'.join(tab)
+        label = '\n'.join(['%02d/%d %s\n' % (k+1, i, x) for k, x in enumerate(tab)])
         relat = '\n'.join(['%s\n' % h[x][2] for x in tab])
         ig    = '\n'.join(['%s\n' % h[x][1] for x in tab])        
         crdit = '\n'.join([('%09.2f' % h[x][3] if h[x][0] else ' ') for x in tab])
@@ -95,11 +95,17 @@ def pdf_statement(td, own, bal, ovd, h):
                 (20,  20, '14F1', own), (20,  230, '10F1', 'Overdraft:'), (80,  230, '10F3', '%9.0f' % ovd), 
                 (20,  250, '14F1', 'Balance:'), (80, 250, '10F6', '%9.2f' % bal), (c1 if bal>0 else c2, 250, '8F3', '%09.2f' % abs(bal)),
                 (320, 240, '8F3', 'Volume'), (c1, 240, '8F6', '%09.2f' % t2), (c2, 240, '8F6', '%09.2f' % t1), 
-                (20,  260, '8F3', label), (220, 260, '8F1', ig), (320, 260, '8F1', relat), (c1, 260, '8F3', crdit), (c2, 260, '8F3', debit), 
+                (12,  260, '8F3', label), (230, 260, '8F1', ig), (320, 260, '8F1', relat), (c1, 260, '8F3', crdit), (c2, 260, '8F3', debit), 
                 (10,  782, '8F1', url), (500,  782, '8F1', 'page %d/%d' % (i+1, tp))]
         content.append(page)
     a = updf(595, 842)
     return a.gen(content)
+
+def pdf_conversion():
+    "_"
+    page = [(410,  18, '12F1', 'HELLO!'), ]
+    a = updf(595, 842)
+    return a.gen([page])
 
 def api():
     """All requests can be send in GET or in POST
@@ -247,7 +253,7 @@ def application(environ, start_response):
         elif reg(re.match(r'^(state|statement)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
             own, sig = reg.v.group(2), reg.v.group(3)
             Bow, Oow, Pow = b'B_'+bytes(own, 'utf8'), b'O_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
-            if verify(RSA_E, b64toi(d[Pow]), ' '.join((own, today[:10])), bytes(sig, 'ascii')):
+            if verify(RSA_E, b64toi(d[Pow]), '/'.join(('st', own, today[:10])), bytes(sig, 'ascii')):
                 o, a, h = 'balance: \t%9.2f⊔\n' % (float(d[Bow].decode('ascii'))), [], {}
                 for x in d.keys():
                     if reg(re.match('T_(.*)$', x.decode('utf8'))):
@@ -273,11 +279,19 @@ def application(environ, start_response):
         # balance()
         elif reg(re.match(r'^(balance)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
             own, sig = reg.v.group(2), reg.v.group(3)
-            Bow, Pow = b'B_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
+            Bow, Oow, Pow = b'B_'+bytes(own, 'utf8'), b'O_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
             if verify(RSA_E, b64toi(d[Pow]), ' '.join((own, today[:10])), bytes(sig, 'ascii')):
-                o = '%9.2f' % float(d[Bow].decode('ascii'))
+                o = '%9.2f %9.2f' % (float(d[Bow].decode('ascii')), float(d[Oow].decode('ascii')))
             else:
                 o += 'balance reading!'            
+        # conversion()
+        elif reg(re.match(r'^(conversion)/([^/]{3,50})/([\d\.]{1,20})/([^/]{680,685})$', raw, re.U)):
+            own, val, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4)
+            Bow, Oow, Pow = b'B_'+bytes(own, 'utf8'), b'O_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
+            if verify(RSA_E, b64toi(d[Pow]), '/'.join(('ex', own, val, today[:10])), bytes(sig, 'ascii')):
+                o, mime = pdf_conversion(), 'application/pdf'
+            else:
+                o += 'conversion!'            
         elif way == 'get':
             if raw.lower() in ('source', 'src'):
                 o = open(__file__, 'r', encoding='utf8').read()

@@ -108,7 +108,7 @@ def get_rates():
     now, db = '%s' % datetime.datetime.now(), '/cup/rates'
     if not os.path.isfile(db + '.db'):
         dr = dbm.open(db, 'c')
-        dr['TODAY'] = b'hello'
+        dr[now[:10]] = b'Init'
         dr.close()
     dr = dbm.open(db, 'w')
     if bytes(now[:10], 'ascii') not in dr.keys():
@@ -390,7 +390,7 @@ def application(environ, start_response):
         start_response('200 OK', [('Content-type', 'application/pdf'), ('Content-Disposition', 'filename={}'.format('EDLC.pdf'))])
         return [open('/home/pi/Economie_de_la_culture.pdf', 'rb').read()] 
     if query == 'reset':
-        subprocess.Popen(('rm', '/u/net.db', '/u/ig.db', '/u/tax.db'),).communicate()
+        subprocess.Popen(('rm', '-f', '/u/net.db', '/u/ig.db', '/u/tax.db', '/cup/node/keys.db'),).communicate()
         start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
         return ['RESET DATABASE OK!'.encode('utf-8')]
     if query == 'verify': return app_verify(environ, start_response)
