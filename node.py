@@ -21,10 +21,11 @@
 "_"
 
 # SHORT TODO LIST (just for me!)
+# - Unicode inside PDF
 # - Fix SVG position relative to right side
 # - Add session key
 # - Add wait alert when registering
-# - Use several nodes
+# - Use/test several nodes
 # - SRP authentication
 # - Implement the 'share' request for co-authors
 # - Add thunbnail covers in jpeg

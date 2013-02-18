@@ -390,7 +390,7 @@ def application(environ, start_response):
         start_response('200 OK', [('Content-type', 'application/pdf'), ('Content-Disposition', 'filename={}'.format('EDLC.pdf'))])
         return [open('/home/pi/Economie_de_la_culture.pdf', 'rb').read()] 
     if query == 'reset':
-        subprocess.Popen(('rm', '-f', '/u/net.db', '/u/ig.db', '/u/tax.db', '/cup/node/keys.db'),).communicate()
+        subprocess.Popen(('rm', '-f', '/u/net.db', '/u/ig.db', '/u/tax.db'),).communicate()
         start_response('200 OK', [('Content-type', 'text/plain; charset=utf-8')])
         return ['RESET DATABASE OK!'.encode('utf-8')]
     if query == 'verify': return app_verify(environ, start_response)

@@ -101,9 +101,10 @@ def pdf_statement(td, own, bal, ovd, h):
     a = updf(595, 842)
     return a.gen(content)
 
-def pdf_conversion():
+def pdf_conversion(td, own, val):
     "_"
-    page = [(410,  18, '12F1', 'HELLO!'), ]
+    page = [(410,  18, '12F1', td), 
+            (20,  20, '14F1', own), (20,  250, '14F1', 'Amount for exchange:'), (200,  250, '14F3', val)]
     a = updf(595, 842)
     return a.gen([page])
 
@@ -289,7 +290,9 @@ def application(environ, start_response):
             own, val, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4)
             Bow, Oow, Pow = b'B_'+bytes(own, 'utf8'), b'O_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
             if verify(RSA_E, b64toi(d[Pow]), '/'.join(('ex', own, val, today[:10])), bytes(sig, 'ascii')):
-                o, mime = pdf_conversion(), 'application/pdf'
+                try: own.encode('ascii')
+                except: own = ('%s' % bytes(own, 'utf8'))[2:-1]
+                o, mime = pdf_conversion(today[:19], own, val), 'application/pdf'
             else:
                 o += 'conversion!'            
         elif way == 'get':
@@ -300,7 +303,7 @@ def application(environ, start_response):
             elif raw.lower() in ('api',):
                 o = api()
             elif raw.lower() == 'reset':
-                subprocess.Popen(('rm', db)).communicate() # Of course this is only temporary available for testing!!!
+                subprocess.call(('rm', '-f', db, '/cup/nodes/keys.db')) # Of course this is only temporary available for testing!!!
                 o = 'RESET DATABASE OK!'
             elif raw.lower() in ('log',):
                 o = open('/cup/log', 'r', encoding='utf8').read()                
@@ -901,24 +904,13 @@ class AFM:
         return o 
 
 if __name__ == '__main__':
+    # debug zone!
     popu = {
-        'Pelinquin':        'fr167071927202809', 
-        'Laurent Fournier': 'fr167071927202809', 
-        'Alice':            'fr267070280099999', 
-        'Valérie':          'fr264070287098888', 
-        'Valérie Fournier': 'fr174070287098888', 
-        'Bob':              'fr161070280095555', 
-        'Carl⊔':            'fr177070284098888', 
-        }
-    
+        'Pelinquin':        'anonymous', 
+        'Carl⊔':            'anonymous', 
+        }    
     man, woman, ig, host = 'Laurent Fournier', 'Valérie Fournier', 'myig_您1', 'localhost'
-    #host = 'pi.pelinquin.fr'
-    #print (register('Bob', 'anonymous', host))    
-    print (statement(man), host)    
-    print (statement(woman), host)    
-    #sk = igreg(man, ig, 0.56, 100000, host)
-    #print (regig(woman, 'mon album', 1.5, 200000, host))    
-
+    host = 'pi.pelinquin.fr'
     sys.exit()
 
 # End ⊔net!
