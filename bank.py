@@ -212,7 +212,7 @@ blabla
 
 def application(environ, start_response):
     "wsgi server app"
-    mime, o, db, db1 today = 'text/plain; charset=utf8', 'Error:', '/cup/bank.db', '/cup/rates.db', '%s' % datetime.datetime.now()
+    mime, o, db, db1, today = 'text/plain; charset=utf8', 'Error:', '/cup/bank.db', '/cup/rates.db', '%s' % datetime.datetime.now()
     init_db(db, db1)
     if environ['REQUEST_METHOD'].lower() == 'post':
         raw, way = urllib.parse.unquote(environ['wsgi.input'].read().decode('utf8')), 'post'
@@ -400,8 +400,8 @@ def favicon():
 
 def frontpage(today, ip):
     "not in html!"
-    #rates = get_rates()
-    rates = {}
+    rates = get_rates()
+    #rates = {}
     d = dbm.open('/cup/bank')
     nb, ck, tr, di, ni, v1, v2 = 0, 0, 0, d['__DIGEST__'], 0, 0 ,0
     for x in d.keys():
