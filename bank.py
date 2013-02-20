@@ -400,8 +400,8 @@ def favicon():
 
 def frontpage(today, ip):
     "not in html!"
-    rates = get_rates()
-    #rates = {}
+    #rates = get_rates()
+    rates = {}
     d = dbm.open('/cup/bank')
     nb, ck, tr, di, ni, v1, v2 = 0, 0, 0, d['__DIGEST__'], 0, 0 ,0
     for x in d.keys():
