@@ -399,6 +399,8 @@ def application(environ, start_response):
             elif raw.lower() == 'reset':
                 subprocess.call(('rm', '-f', db, '/cup/nodes/keys.db')) # Of course this is only temporary available for testing!!!
                 o = 'RESET DATABASE OK!'
+            elif raw.lower() in ('host',):
+                o, mime = open('/cup/host.jpg', 'rb').read(), 'image/jpeg'
             elif raw.lower() in ('log',):
                 o = open('/cup/log', 'r', encoding='utf8').read()                
             elif raw.lower() in ('list', 'raw'):
@@ -415,7 +417,7 @@ def application(environ, start_response):
         o += 'arg too long'
     d.close()
     start_response('200 OK', [('Content-type', mime)])
-    return [o if mime == 'application/pdf' else o.encode('utf8')] 
+    return [o if mime == 'application/pdf' or mime == 'image/jpeg' else o.encode('utf8')] 
 
 def favicon():
     "_"
@@ -449,8 +451,9 @@ def frontpage(today, ip):
     o += '<text x="80" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
 
     if rates:
-        o += '<text x="15" y="100" font-size="10">1⊔ =</text>\n' 
-        for i, x in enumerate(rates.keys()): o += '<text x="25" y="%d" font-size="10">%9.6f %s</text>\n' % (116+15*i, rates[x], x)
+        o += '<text x="15" y="108" font-size="10">%s</text>\n' % today[:10] 
+        o += '<text x="15" y="120" font-size="10">1⊔ =</text>\n' 
+        for i, x in enumerate(rates.keys()): o += '<text x="40" y="%d" font-size="10">%9.6f %s</text>\n' % (136+15*i, rates[x], x)
 
     o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!" transform="rotate(-30 92,25)">Beta</text>\n'
     o += '<text class="alpha" font-size="50pt" x="50%" y="40%"><tspan title="only HTTP (GET or POST), SVG and CSS!">No https, no html, no JavaScript,</tspan><tspan x="50%" dy="100" title="better privacy also!">better security!</tspan></text>\n'
@@ -466,7 +469,7 @@ def frontpage(today, ip):
     if ip == '127.0.0.1': 
         o += '<text class="note" x="160" y="90"  title="my ip adress">local server</text>\n'
     o += '<a xlink:href="bank?help"><text class="note" x="99%" y="20" title="help">Help</text></a>\n'
-    o += '<a xlink:href="u?pi"     ><text class="note" x="99%" y="40" title="at home!">Host</text></a>\n'            
+    o += '<a xlink:href="bank?host"><text class="note" x="99%" y="40" title="at home!">Host</text></a>\n'            
     o += '<a xlink:href="bank?log" ><text class="note" x="99%" y="60" title="log file">Log</text></a>\n'
     o += '<a xlink:href="bank?list"><text class="note" x="99%" y="80" title="ig list">List</text></a>\n'
     o += '<a xlink:href="bank?api"><text class="note" x="99%" y="100" title="for developpers">API</text></a>\n'
