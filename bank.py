@@ -90,14 +90,16 @@ def get_rates():
                 co.request('GET', '/getlatest/%s/USD' %c)
                 h[c+'USD'] = float(co.getresponse().read())
         tab = sorted(dr.keys())
-        assert bytes(now[:10],'ascii') == tab[-1]
         if len(tab)>1:
+            assert bytes(now[:10],'ascii') == tab[-1]
             r1, r2 = eval(dr[tab[-2]]), eval(dr[tab[-1]])
             expand_r(r1)
             expand_r(r2)
             r = init_r(r1, 'USD', r1['IGCUSD'] if 'IGCUSD' in r1 else 2)
             t = compute_r(r2, r)
             h['IGCUSD'] = t['IGCUSD']
+        else:
+            h['IGCUSD'] = 2
         dr[now[:10]] = '%s' % h
     r = eval(dr[bytes(now[:10],'ascii')]) # to optimize!
     expand_r(r)
