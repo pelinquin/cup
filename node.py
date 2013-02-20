@@ -124,7 +124,7 @@ def application(environ, start_response):
                 ki = [b64toi(x) for x in d['PK_' + login].split()]
                 o, mime, fname = statement(login, ki), 'application/pdf', 'statement.pdf'
             else:
-                o += 'something wrong in the input text!'
+                o += 'something wrong in the input text! %s' % raw
         else:
             l, le = raw[:300].split(b'\r\n'), raw[-550:].split(b'\r\n')
             f, fn = len(l[0]) + 6, reg.v.group(1) if reg(re.search('filename="([^"]+)"', l[1].decode('utf8'), re.U)) else 'error'

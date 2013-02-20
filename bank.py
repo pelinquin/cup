@@ -104,6 +104,17 @@ def get_rates():
     dr.close()
     return {x:r['IGCUSD']*r['USD'+x] for x in __currencies__}
 
+def get_my_rate(r):
+    "_"
+    now, db, res = '%s' % datetime.datetime.now(), '/cup/rates', 0
+    dr = dbm.open(db, 'w')
+    if bytes(now[:10], 'ascii') in dr.keys():
+        h = eval(dr[bytes(now[:10], 'ascii')])
+        if 'IGCUSD' in h.keys(): res = h['IGCUSD']/h[r+'USD']
+    dr.close()
+    return res
+    
+
 def reg(value):
     " function attribute is a way to access matching group in one line test "
     reg.v = value
@@ -172,8 +183,17 @@ def pdf_statement(td, own, bal, ovd, h):
 
 def pdf_conversion(td, own, val):
     "_"
+    r = get_my_rate('EUR')
+    # for instance: https://www.ibps.occitane.banquepopulaire.fr
     page = [(410,  18, '12F1', td), 
-            (20,  20, '14F1', own), (20,  250, '14F1', 'Amount for exchange:'), (200,  250, '14F3', val)]
+            (20,  20, '14F1', own), 
+            (20,  250, '12F1', 'My Bank:'),                     (220,  250, '14F3', 'Banque Pop'),
+            (20,  300, '12F1', 'Amount in cups for exchange:'), (220,  300, '12F3', '%9.2f' % val),
+            (20,  320, '12F1', 'Nominal rate:'),                (220,  320, '12F3', '%9.6f' % r),
+            (20,  340, '12F1', 'Amount in EUR for exchange:'),  (220,  340, '12F3', '%9.2f' % (val*r)),
+            (20,  360, '12F1', 'Taxes (5%) EUR:'),              (220,  360, '12F3', '%9.2f' % (val*.05*r)), # 5%
+            (20,  380, '12F1', 'Total EUR:'),                   (220,  380, '12F6', '%9.2f' % (val*1.05*r))] 
+    
     a = updf(595, 842)
     return a.gen([page])
 
@@ -316,6 +336,9 @@ def application(environ, start_response):
                     if reg(re.match('C_(.*)$', x.decode('utf8'))):
                         if owr in d[x].decode('utf8').split('/'):
                             res += '/' + reg.v.group(1)
+                    if reg(re.match('I_(.*)$', x.decode('utf8'))):
+                        if owr == d[x].decode('utf8').split('/')[3]:
+                            res += '/' + reg.v.group(1)
                 o = res
             else:
                 o += 'playlist empty!'
@@ -361,7 +384,7 @@ def application(environ, start_response):
             if verify(RSA_E, b64toi(d[Pow]), '/'.join(('ex', own, val, today[:10])), bytes(sig, 'ascii')):
                 try: own.encode('ascii')
                 except: own = ('%s' % bytes(own, 'utf8'))[2:-1]
-                o, mime = pdf_conversion(today[:19], own, val), 'application/pdf'
+                o, mime = pdf_conversion(today[:19], own, float(val)), 'application/pdf'
             else:
                 o += 'conversion!'            
         elif way == 'get':
@@ -400,8 +423,8 @@ def favicon():
 
 def frontpage(today, ip):
     "not in html!"
-    #rates = get_rates()
-    rates = {}
+    rates = get_rates() # FIX TONIGHT!
+    #rates = {}
     d = dbm.open('/cup/bank')
     nb, ck, tr, di, ni, v1, v2 = 0, 0, 0, d['__DIGEST__'], 0, 0 ,0
     for x in d.keys():
