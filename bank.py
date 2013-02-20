@@ -38,6 +38,72 @@ RSA_E = 65537
 MAX_ARG_SIZE = 2000
 PRECISION = .0001
 
+__currencies__ = {
+    'USD': None, 'EUR': None, 'JPY': None, 'CAD': None, 'GBP': None,
+    'CHF': None, 'RUB': None, 'AUD': None, 'SEK': None, 'DKK': None,
+    'HKD': None, 'PLN': None, 'CNY': None, 'SGD': None, 'THB': None,
+    'NZD': None, 'NOK': None,
+}
+
+def init_r(r1, u, a):
+    "_"
+    return { 'IGC'+x:a*r1[u+x] for x in __currencies__.keys()}
+
+def expand_r (r):
+    "_"
+    u = 'USD'
+    for c in __currencies__.keys():
+        r[c+c] = 1
+        if c != u:
+            r[u+c] = 1/r[c+u]
+    for c1 in __currencies__.keys():
+         for c2 in __currencies__.keys():
+             if c1 != c2 and (c1 != u) and (c2 != u): 
+                 r[c1+c2] = r[c1+u] * r[u+c2]
+
+def func_r(r, t, r2, i):
+    "_"
+    u = 'EUR' # works with any currency!
+    for x in __currencies__.keys(): t['IGC'+x] = (r['IGC'+u]+i)*r2[u+x]
+    return abs(sum(r['IGC'+w] - t['IGC'+w] for w in __currencies__.keys())) 
+
+def compute_r(r2, r):
+    "_"
+    t, i, j = {}, -10.0, 10.0
+    while i!=j:
+        if func_r(r, t, r2, i) > func_r(r, t, r2, j): i = .5*(i+j) 
+        else: j = .5*(i+j)
+    return t 
+
+def get_rates():
+    "_"
+    now, db = '%s' % datetime.datetime.now(), '/cup/rates'
+    if not os.path.isfile(db + '.db'):
+        dr = dbm.open(db, 'c')
+        dr[now[:10]] = b'Init'
+        dr.close()
+    dr = dbm.open(db, 'w')
+    if bytes(now[:10], 'ascii') not in dr.keys():
+        co, h = http.client.HTTPConnection('currencies.apps.grandtrunk.net'), {}
+        for c in __currencies__:
+            if c != 'USD':
+                co.request('GET', '/getlatest/%s/USD' %c)
+                h[c+'USD'] = float(co.getresponse().read())
+        tab = sorted(dr.keys())
+        assert bytes(now[:10],'ascii') == tab[-1]
+        if len(tab)>1:
+            r1, r2 = eval(dr[tab[-2]]), eval(dr[tab[-1]])
+            expand_r(r1)
+            expand_r(r2)
+            r = init_r(r1, 'USD', r1['IGCUSD'] if 'IGCUSD' in r1 else 2)
+            t = compute_r(r2, r)
+            h['IGCUSD'] = t['IGCUSD']
+        dr[now[:10]] = '%s' % h
+    r = eval(dr[bytes(now[:10],'ascii')]) # to optimize!
+    expand_r(r)
+    dr.close()
+    return {x:r['IGCUSD']*r['USD'+x] for x in __currencies__}
+
 def reg(value):
     " function attribute is a way to access matching group in one line test "
     reg.v = value
@@ -85,7 +151,7 @@ def pdf_statement(td, own, bal, ovd, h):
     tp = 1 + len(tabb)//size
     for i in range(tp):
         tab = tabb[i*size:(i+1)*size]
-        label = '\n'.join(['%02d/%d %s\n' % (k+1, i, x) for k, x in enumerate(tab)])
+        label = '\n'.join(['%02d/%d %s\n' % (k+1, i+1, x) for k, x in enumerate(tab)])
         relat = '\n'.join(['%s\n' % h[x][2] for x in tab])
         ig    = '\n'.join(['%s\n' % h[x][1] for x in tab])        
         crdit = '\n'.join([('%09.2f' % h[x][3] if h[x][0] else ' ') for x in tab])
@@ -161,7 +227,7 @@ def application(environ, start_response):
                 o += 'public key already exists for %s !' % own 
             elif (uid != 'anonymous') and (Uid in d.keys()):
                 o += 'user id already registered for %s !' % own 
-            elif verify(RSA_E, b64toi(bytes(pbk, 'ascii')), ' '.join((today[:10], own, uid)), bytes(sig, 'ascii')):
+            elif verify(RSA_E, b64toi(bytes(pbk, 'ascii')), '/'.join((today[:10], own, uid)), bytes(sig, 'ascii')):
                 d[Oor] = '100' if reg(re.match('^fr\d{15}$', uid)) and int(uid[-2:]) == (97 - int(uid[2:-2])%97) else '0' # french id!                    
                 d[Por], d[Bor], d[Uid], o = pbk, '0', own, 'Public key id registration OK for \'%s\'' % own 
             else:
@@ -175,7 +241,7 @@ def application(environ, start_response):
                 o += 'IG id already set!'
             elif float(p1)<0 or float(pf)<float(1):
                 o += 'bad prices!'
-            elif verify(RSA_E, b64toi(d[Ppk]), ' '.join((today[:10], own, iid, p1, pf)), bytes(sig, 'ascii')):
+            elif verify(RSA_E, b64toi(d[Ppk]), '/'.join((today[:10], own, iid, p1, pf)), bytes(sig, 'ascii')):
                 ra = os.urandom(16)
                 akey = itob64(int(binascii.hexlify(os.urandom(16)), 16))
                 era = encrypt(RSA_E, b64toi(d[Ppk]), akey)
@@ -190,7 +256,7 @@ def application(environ, start_response):
             byr, ig, td, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5)
             Bby, Pby, Oby, Ttr = b'B_'+bytes(byr, 'utf8'), b'P_' + bytes(byr, 'utf8'), b'O_' + bytes(byr, 'utf8'), b'T_' + bytes(sig[:20], 'ascii'), 
             Iig, Cig = b'I_' + bytes(ig, 'utf8'), b'C_' + bytes(ig, 'utf8')
-            if verify(RSA_E, b64toi(d[Pby]), ' '.join((byr, ig, td)), bytes(sig, 'ascii')) and Iig in d.keys() and not (Ttr in d.keys()):
+            if verify(RSA_E, b64toi(d[Pby]), '/'.join((byr, ig, td)), bytes(sig, 'ascii')) and Iig in d.keys() and not (Ttr in d.keys()):
                 tab, tac = d[Iig].decode('utf8').split('/'), d[Cig].decode('utf8').split('/')
                 prc, slr = float(tab[1]), tab[3]
                 Bsr = b'B_'+bytes(slr, 'utf8')
@@ -281,7 +347,7 @@ def application(environ, start_response):
         elif reg(re.match(r'^(balance)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
             own, sig = reg.v.group(2), reg.v.group(3)
             Bow, Oow, Pow = b'B_'+bytes(own, 'utf8'), b'O_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
-            if verify(RSA_E, b64toi(d[Pow]), ' '.join((own, today[:10])), bytes(sig, 'ascii')):
+            if verify(RSA_E, b64toi(d[Pow]), '/'.join((own, today[:10])), bytes(sig, 'ascii')):
                 o = '%9.2f %9.2f' % (float(d[Bow].decode('ascii')), float(d[Oow].decode('ascii')))
             else:
                 o += 'balance reading!'            
@@ -331,6 +397,7 @@ def favicon():
 
 def frontpage(today, ip):
     "not in html!"
+    rates = get_rates()
     d = dbm.open('/cup/bank')
     nb, ck, tr, di, ni, v1, v2 = 0, 0, 0, d['__DIGEST__'], 0, 0 ,0
     for x in d.keys():
@@ -351,6 +418,10 @@ def frontpage(today, ip):
     o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}input{padding:5px;border:1px solid #D1D1D2;border-radius:10px;font-size:24px;}input[type="text"]{color:#999;}input[type="submit"]{color:#FFF;}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="80" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
+
+    o += '<text x="15" y="100" font-size="10">1⊔ =</text>\n' 
+    for i, x in enumerate(rates.keys()): o += '<text x="25" y="%d" font-size="10">%9.6f %s</text>\n' % (116+15*i, rates[x], x)
+
     o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!" transform="rotate(-30 92,25)">Beta</text>\n'
     o += '<text class="alpha" font-size="50pt" x="50%" y="40%"><tspan title="only HTTP (GET or POST), SVG and CSS!">No https, no html, no JavaScript,</tspan><tspan x="50%" dy="100" title="better privacy also!">better security!</tspan></text>\n'
     o += '<text class="foot" x="50%%" y="50" title="today">%s</text>\n' % today[:19]
@@ -359,9 +430,9 @@ def frontpage(today, ip):
     o += '<text class="foot" x="62%%" y="80%%" title="number of registered Intangible Goods">%04d IGs</text>\n' % ni
     o += '<text class="foot" x="84%%" y="80%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % v1
     o += '<a xlink:href="bank?src" ><text class="note" x="160" y="98%" title="on GitHub (https://github.com/pelinquin/cup) hack it, share it!">Download the source code!</text></a>\n'
-    o += '<foreignObject x="10" y="100" width="600" height="100"><div %s><form method="post">\n' % _XHTMLNS
-    o += '<input type="text" name="q"/><input type="submit" value="IG Search" title="Intangible Goods Search Request"/>\n'
-    o += '</form></div></foreignObject>\n'
+    #o += '<foreignObject x="10" y="100" width="600" height="100"><div %s><form method="post">\n' % _XHTMLNS
+    #o += '<input type="text" name="q"/><input type="submit" value="IG Search" title="Intangible Goods Search Request"/>\n'
+    #o += '</form></div></foreignObject>\n'
     if ip == '127.0.0.1': 
         o += '<text class="note" x="160" y="90"  title="my ip adress">local server</text>\n'
     o += '<a xlink:href="bank?help"><text class="note" x="99%" y="20" title="help">Help</text></a>\n'
@@ -410,8 +481,8 @@ def register(owner, iduser='anonymous', host='localhost', post=False):
     td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')    
     ki, kb = [b64toi(x) for x in ds[owner].split()], [x for x in ds[owner].split()]
     ds.close()
-    s = sign(ki[1], ki[2], ' '.join((td[:10], owner, iduser)))
-    assert (verify(RSA_E, ki[2], ' '.join((td[:10], owner, iduser)), s))
+    s = sign(ki[1], ki[2], '/'.join((td[:10], owner, iduser)))
+    assert (verify(RSA_E, ki[2], '/'.join((td[:10], owner, iduser)), s))
     cmd = '/'.join(('reg', owner, iduser, kb[2].decode('ascii'), s.decode('ascii')))
     return format_cmd(post, cmd)
 
@@ -420,7 +491,7 @@ def igreg(owner, idig, p1, pf, host='localhost', post=False):
     td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
     ki = [b64toi(x) for x in ds[owner].split()]
     ds.close()
-    s = sign(ki[1], ki[2], ' '.join((td[:10], owner, idig, '%s' % p1, '%s' % pf)))
+    s = sign(ki[1], ki[2], '/'.join((td[:10], owner, idig, '%s' % p1, '%s' % pf)))
     cmd = '/'.join(('ig', owner, idig, '%s' % p1, '%s' % pf, s.decode('ascii')))
     era = format_cmd1(post, cmd)
     if era[:5] != 'Error':
@@ -435,7 +506,7 @@ def transaction(byr, slr, prc, host='localhost', post=False):
     td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
     ki = [b64toi(x) for x in ds[byr].split()]
     ds.close()
-    s = sign(ki[1], ki[2], ' '.join((byr, slr, '%s' % prc, td)))
+    s = sign(ki[1], ki[2], '/'.join((byr, slr, '%s' % prc, td)))
     cmd = '/'.join(('transaction', byr, slr, '%s' % prc, td, s.decode('ascii')))
     return format_pdf(post, cmd, 'tata')
 
@@ -455,7 +526,7 @@ def download(byr, url, host='localhost', post=False):
     ki = [b64toi(x) for x in ds[byr].split()]
     ds.close()
     era = encrypt(RSA_E, ki[2], url)
-    s = sign(ki[1], ki[2], ' '.join((byr, td[:10], '%s' % era[:20])))
+    s = sign(ki[1], ki[2], '/'.join((byr, td[:10], '%s' % era[:20])))
     cmd = '/'.join(('download', byr, '%s' % era, s.decode('ascii')))
     return format_pdf(post, cmd, 'tata')
 
@@ -464,7 +535,7 @@ def prep_transaction(byr, slr, prc, host='localhost', post=False):
     td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
     ki = [b64toi(x) for x in ds[byr].split()]
     ds.close()
-    s = sign(ki[1], ki[2], ' '.join((byr, slr, '%s' % prc, td)))
+    s = sign(ki[1], ki[2], '/'.join((byr, slr, '%s' % prc, td)))
     cmd = '/'.join(('transaction', byr, slr, '%s' % prc, td, s.decode('ascii')))
     return 'http://%s/bank?%s' % (host, urllib.parse.quote(cmd))
 
@@ -473,7 +544,7 @@ def statement(own, host='localhost', post=False):
     td, ds = '%s' % datetime.datetime.now(), dbm.open('/u/sk')
     ki = [b64toi(x) for x in ds[own].split()]
     ds.close()
-    s = sign(ki[1], ki[2], ' '.join((own, td[:10])))
+    s = sign(ki[1], ki[2], '/'.join((own, td[:10])))
     cmd = '/'.join(('statement', own, s.decode('ascii')))
     return format_cmd(post, cmd)
             

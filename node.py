@@ -299,15 +299,15 @@ def format_cmd(post, cmd, binary=False, host='localhost'):
 def register(owner, ki, kb, iduser='anonymous', host='localhost', post=False):
     "_"
     td = '%s' % datetime.datetime.now()
-    s = sign(ki[1], ki[2], ' '.join((td[:10], owner, iduser)))
-    assert (verify(RSA_E, ki[2], ' '.join((td[:10], owner, iduser)), s))
+    s = sign(ki[1], ki[2], '/'.join((td[:10], owner, iduser)))
+    assert (verify(RSA_E, ki[2], '/'.join((td[:10], owner, iduser)), s))
     cmd = '/'.join(('reg', owner, iduser, kb[2].decode('ascii'), s.decode('ascii')))
     return format_cmd(post, cmd)
 
 def igreg(owner, idig, p1, pf, ki, host='localhost', post=False):
     "_"
     td = '%s' % datetime.datetime.now()
-    s = sign(ki[1], ki[2], ' '.join((td[:10], owner, idig, '%s' % p1, '%s' % pf)))
+    s = sign(ki[1], ki[2], '/'.join((td[:10], owner, idig, '%s' % p1, '%s' % pf)))
     cmd = '/'.join(('ig', owner, idig, '%s' % p1, '%s' % pf, s.decode('ascii')))
     era = format_cmd(post, cmd, True)
     if era[:5] != b'Error':
@@ -320,7 +320,7 @@ def igreg(owner, idig, p1, pf, ki, host='localhost', post=False):
 def buy(byr, ig, ki, host='localhost', post=False):
     "_"
     td = '%s' % datetime.datetime.now()
-    s = sign(ki[1], ki[2], ' '.join((byr, ig, td)))
+    s = sign(ki[1], ki[2], '/'.join((byr, ig, td)))
     cmd = '/'.join(('buy', byr, ig, td, s.decode('ascii')))
     era = format_cmd(post, cmd, True)
     if era[:5] != b'Error':
@@ -353,7 +353,7 @@ def conversion(own, val, ki, host='localhost', post=False):
 def balance(own, ki, host='localhost', post=False):
     "_"
     td = '%s' % datetime.datetime.now()
-    s = sign(ki[1], ki[2], ' '.join((own, td[:10])))
+    s = sign(ki[1], ki[2], '/'.join((own, td[:10])))
     cmd = '/'.join(('balance', own, s.decode('ascii')))
     return format_cmd(post, cmd, False)
 
