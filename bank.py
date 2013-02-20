@@ -109,11 +109,14 @@ def reg(value):
     reg.v = value
     return value
 
-def init_db(db):
+def init_db(db, db1):
     "_"
     if not os.path.isfile(db):
         d = dbm.open(db[:-3], 'c')
         d['__DIGEST__'] = __digest__
+        d.close()
+    if not os.path.isfile(db1):
+        d = dbm.open(db1[:-3], 'c')
         d.close()
 
 def log(s, ip=''):
@@ -209,8 +212,8 @@ blabla
 
 def application(environ, start_response):
     "wsgi server app"
-    mime, o, db, today = 'text/plain; charset=utf8', 'Error:', '/cup/bank.db', '%s' % datetime.datetime.now()
-    init_db(db)
+    mime, o, db, db1 today = 'text/plain; charset=utf8', 'Error:', '/cup/bank.db', '/cup/rates.db', '%s' % datetime.datetime.now()
+    init_db(db, db1)
     if environ['REQUEST_METHOD'].lower() == 'post':
         raw, way = urllib.parse.unquote(environ['wsgi.input'].read().decode('utf8')), 'post'
     else:
@@ -398,6 +401,7 @@ def favicon():
 def frontpage(today, ip):
     "not in html!"
     rates = get_rates()
+    #rates = {}
     d = dbm.open('/cup/bank')
     nb, ck, tr, di, ni, v1, v2 = 0, 0, 0, d['__DIGEST__'], 0, 0 ,0
     for x in d.keys():
@@ -419,8 +423,9 @@ def frontpage(today, ip):
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="80" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
 
-    o += '<text x="15" y="100" font-size="10">1⊔ =</text>\n' 
-    for i, x in enumerate(rates.keys()): o += '<text x="25" y="%d" font-size="10">%9.6f %s</text>\n' % (116+15*i, rates[x], x)
+    if rates:
+        o += '<text x="15" y="100" font-size="10">1⊔ =</text>\n' 
+        for i, x in enumerate(rates.keys()): o += '<text x="25" y="%d" font-size="10">%9.6f %s</text>\n' % (116+15*i, rates[x], x)
 
     o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!" transform="rotate(-30 92,25)">Beta</text>\n'
     o += '<text class="alpha" font-size="50pt" x="50%" y="40%"><tspan title="only HTTP (GET or POST), SVG and CSS!">No https, no html, no JavaScript,</tspan><tspan x="50%" dy="100" title="better privacy also!">better security!</tspan></text>\n'
