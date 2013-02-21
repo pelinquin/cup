@@ -109,11 +109,10 @@ def application(environ, start_response):
                 ki = [b64toi(x) for x in d['PK_' + login].split()]
                 buy(login, reg.v.group(1), ki) 
                 o, mime = frontpage(today, environ['REMOTE_ADDR'], d, fr, login), 'application/xhtml+xml; charset=utf8'
-            elif reg(re.match('get=([^&]+)', urllib.parse.unquote(raw.decode('utf8')))):
+            elif reg(re.match('get=([^&]+)', urllib.parse.unquote_plus(raw.decode('utf8')))):
                 ki = [b64toi(x) for x in d['PK_' + login].split()]
                 ig = reg.v.group(1)
                 #ncl = isclient(__owner__, login, ig)
-                #if ncl[:5] != b'Error':
                 fpdf = '/cup/%s/%s.pdf' % (__user__, ig)
                 content = open(fpdf.encode('utf8'), 'rb').read()
                 o, mime, fname = content, 'application/pdf', ig + '.pdf'                 
@@ -140,7 +139,9 @@ def application(environ, start_response):
         values = [d[k].decode('utf8') for k in d.keys()]
         if raw[:9].lower() == 'statement':
             ncl = statement(__owner__)
-            o, mime, fname = ncl, 'application/pdf', 'statement' 
+            o, mime, fname = ncl, 'application/pdf', 'statement'
+        elif raw.lower() in ('log',):
+            o = open('/cup/%s/log' % __user__, 'r', encoding='utf8').read()                
         else:
             o, mime = frontpage(today, environ['REMOTE_ADDR'], d, fr, login), 'application/xhtml+xml; charset=utf8'
             #o = '%s' % environ['HTTP_COOKIE']

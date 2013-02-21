@@ -562,7 +562,7 @@ def application(environ, start_response):
     #if raw: o += "<pre>%s</pre>" % raw
     #o += "<pre>%s</pre>" % query
     #o += test_cup_ratios()
-    get_rates()
+    #get_rates()
     o += foot(fr) + '</html>'
     start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))] + newcook)
     return [o.encode('utf-8')] 

@@ -77,7 +77,7 @@ def compute_r(r2, r):
 
 def get_rates():
     "_"
-    now, db = '%s' % datetime.datetime.now(), '/cup/rates'
+    now, db, v0 = '%s' % datetime.datetime.now(), '/cup/rates', 2
     if not os.path.isfile(db + '.db'):
         dr = dbm.open(db, 'c')
         dr[now[:10]] = b'Init'
@@ -91,15 +91,14 @@ def get_rates():
                 h[c+'USD'] = float(co.getresponse().read())
         tab = sorted(dr.keys())
         if len(tab)>1:
-            assert bytes(now[:10],'ascii') == tab[-1]
             r1, r2 = eval(dr[tab[-2]]), eval(dr[tab[-1]])
             expand_r(r1)
             expand_r(r2)
-            r = init_r(r1, 'USD', r1['IGCUSD'] if 'IGCUSD' in r1 else 2)
+            r = init_r(r1, 'USD', r1['IGCUSD'] if 'IGCUSD' in r1 else v0)
             t = compute_r(r2, r)
             h['IGCUSD'] = t['IGCUSD']
         else:
-            h['IGCUSD'] = 2
+            h['IGCUSD'] = v0
         dr[now[:10]] = '%s' % h
     r = eval(dr[bytes(now[:10],'ascii')]) # to optimize!
     expand_r(r)
@@ -427,8 +426,7 @@ def favicon():
 
 def frontpage(today, ip):
     "not in html!"
-    rates = get_rates() # FIX TONIGHT!
-    #rates = {}
+    rates = get_rates() 
     d = dbm.open('/cup/bank')
     nb, ck, tr, di, ni, v1, v2 = 0, 0, 0, d['__DIGEST__'], 0, 0 ,0
     for x in d.keys():
@@ -446,22 +444,25 @@ def frontpage(today, ip):
     assert(abs(v1-v2) < PRECISION and abs(ck) < PRECISION)
     o = '<?xml version="1.0" encoding="utf8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
-    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:middle;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}input{padding:5px;border:1px solid #D1D1D2;border-radius:10px;font-size:24px;}input[type="text"]{color:#999;}input[type="submit"]{color:#FFF;}</style>\n'
+    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:middle;}text.rate{font-family:courier; font-size:9pt; fill:#333;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}input{padding:5px;border:1px solid #D1D1D2;border-radius:10px;font-size:24px;}input[type="text"]{color:#999;}input[type="submit"]{color:#FFF;}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="80" y="70" font-size="45" title="banking for intangible goods">Bank</text>\n'
 
     if rates:
-        o += '<text x="15" y="108" font-size="10">%s</text>\n' % today[:10] 
-        o += '<text x="15" y="120" font-size="10">1⊔ =</text>\n' 
-        for i, x in enumerate(rates.keys()): o += '<text x="40" y="%d" font-size="10">%9.6f %s</text>\n' % (136+15*i, rates[x], x)
+        o += '<text x="15" y="88" font-size="10">%s</text>\n' % today[:10] 
+        o += '<text class="rate" x="15" y="102" font-size="10">1⊔ =</text>\n' 
+        for i, x in enumerate(rates.keys()): o += '<text class="rate" x="110" y="%d" text-anchor="end">%9.6f %s</text>\n' % (116+15*i, rates[x], x)
+        for i, x in enumerate(rates.keys()): o += '<text class="rate" x="150" y="%d" text-anchor="start">%s = %9.8f⊔</text>\n' % (116+15*i, x, 1/rates[x])
 
     o += '<text class="alpha" font-size="16pt" x="92"  y="25" title="still in security test phase!" transform="rotate(-30 92,25)">Beta</text>\n'
-    o += '<text class="alpha" font-size="50pt" x="50%" y="40%"><tspan title="only HTTP (GET or POST), SVG and CSS!">No https, no html, no JavaScript,</tspan><tspan x="50%" dy="100" title="better privacy also!">better security!</tspan></text>\n'
+    #o += '<text class="alpha" font-size="50pt" x="50%" y="40%"><tspan title="only HTTP (GET or POST), SVG and CSS!">No https, no html, no JavaScript,</tspan><tspan x="50%" dy="100" title="better privacy also!">better security!</tspan></text>\n'
+    o += '<text class="alpha" font-size="50pt" x="50%" y="25%"><tspan title="only HTTP (GET or POST), SVG and CSS!">No https, no html, </tspan><tspan x="50%" dy="85" title="no JavaScript!">no JavaScript,</tspan><tspan x="50%" dy="85" title="better privacy also!">better security!</tspan></text>\n'
+
     o += '<text class="foot" x="50%%" y="50" title="today">%s</text>\n' % today[:19]
-    o += '<text class="foot" x="16%%" y="80%%" title="registered users">%04d users</text>\n' % nb
-    o += '<text class="foot" x="38%%" y="80%%" title="">%06d transactions</text>\n' % tr
-    o += '<text class="foot" x="62%%" y="80%%" title="number of registered Intangible Goods">%04d IGs</text>\n' % ni
-    o += '<text class="foot" x="84%%" y="80%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % v1
+    o += '<text class="foot" x="16%%" y="88%%" title="registered users">%04d users</text>\n' % nb
+    o += '<text class="foot" x="38%%" y="88%%" title="">%06d transactions</text>\n' % tr
+    o += '<text class="foot" x="62%%" y="88%%" title="number of registered Intangible Goods">%04d IGs</text>\n' % ni
+    o += '<text class="foot" x="84%%" y="88%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % v1
     o += '<a xlink:href="bank?src" ><text class="note" x="160" y="98%" title="on GitHub (https://github.com/pelinquin/cup) hack it, share it!">Download the source code!</text></a>\n'
     #o += '<foreignObject x="10" y="100" width="600" height="100"><div %s><form method="post">\n' % _XHTMLNS
     #o += '<input type="text" name="q"/><input type="submit" value="IG Search" title="Intangible Goods Search Request"/>\n'
