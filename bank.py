@@ -20,7 +20,7 @@
 #-----------------------------------------------------------------------------
 "_"
 
-import re, os, sys, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools, subprocess, math
+import re, os, sys, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools, subprocess, math, time
 from Crypto.Cipher import AES
 
 __digest__ = base64.urlsafe_b64encode(hashlib.sha1(open(__file__, 'r', encoding='utf8').read().encode('utf8')).digest())[:5]
@@ -138,7 +138,7 @@ def log(s, ip=''):
     cont = open(logf, 'r', encoding='utf8').read()
     open(logf, 'w', encoding='utf8').write('%s|%s|%s\n%s' % (now[:-7], ip, s, cont))
 
-def receipt(td, ig, slr, byr, url, ncl, sig):
+def pdf_receipt(td, ig, slr, byr, url, ncl, sig):
     "_"
     try: ig.encode('ascii')
     except: ig = '%s' % bytes(ig, 'utf8')
@@ -173,7 +173,7 @@ def pdf_statement(td, own, bal, ovd, h):
         debit = '\n'.join([(' ' if h[x][0] else '%09.2f' % h[x][3]) for x in tab])
         t1, t2 = sum([(0 if h[x][0] else h[x][3]) for x in tab]), sum([(h[x][3] if h[x][0] else 0) for x in tab])
         page = [(410,  18, '12F1', td), 
-                (20,  20, '14F1', own), (20,  230, '10F1', 'Overdraft:'), (80,  230, '10F3', '%9.0f' % ovd), 
+                (30,  20, '14F1', own), (20,  230, '10F1', 'Overdraft:'), (80,  230, '10F3', '%9.0f' % ovd), 
                 (20,  250, '14F1', 'Balance:'), (80, 250, '10F6', '%9.2f' % bal), (c1 if bal>0 else c2, 250, '8F3', '%09.2f' % abs(bal)),
                 (320, 240, '8F3', 'Volume'), (c1, 240, '8F6', '%09.2f' % t2), (c2, 240, '8F6', '%09.2f' % t1), 
                 (12,  260, '8F3', label), (230, 260, '8F1', ig), (320, 260, '8F1', relat), (c1, 260, '8F3', crdit), (c2, 260, '8F3', debit), 
@@ -185,16 +185,24 @@ def pdf_statement(td, own, bal, ovd, h):
 def pdf_conversion(td, own, val):
     "_"
     r = get_my_rate('EUR')
-    # for instance: https://www.ibps.occitane.banquepopulaire.fr
     page = [(410,  18, '12F1', td), 
-            (20,  20, '14F1', own), 
+            (30,  20, '14F1', own), 
             (20,  250, '12F1', 'My Bank:'),                     (220,  250, '14F3', 'Banque Pop'),
-            (20,  300, '12F1', 'Amount in cups for exchange:'), (220,  300, '12F3', '%9.2f' % val),
-            (20,  320, '12F1', 'Nominal rate:'),                (220,  320, '12F3', '%9.6f' % r),
-            (20,  340, '12F1', 'Amount in EUR for exchange:'),  (220,  340, '12F3', '%9.2f' % (val*r)),
-            (20,  360, '12F1', 'Taxes (5%) EUR:'),              (220,  360, '12F3', '%9.2f' % (val*.05*r)), # 5%
-            (20,  380, '12F1', 'Total EUR:'),                   (220,  380, '12F6', '%9.2f' % (val*1.05*r))] 
-    
+            (20,  300, '12F1', 'Nominal rate:'),                (220,  300, '12F3', '%9.6f' % r),   (300,  300, '9F1', 'EUR/'), (324,  300, '6F1', '⊔'),
+            (20,  320, '12F1', 'Amount for exchange:'),         (220,  320, '12F3', '%9.2f' % val),          (300,  320, '8F1', '⊔'),
+            (20,  340, '12F1', 'Amount for exchange:'),         (220,  340, '12F3', '%9.2f' % (val*r)),      (300,  340, '9F1', 'EUR'),
+            (20,  360, '12F1', 'Taxes \(2.0%\):'),              (220,  360, '12F3', '%9.2f' % (val*.02*r)),  (300,  360, '9F1', 'EUR'),
+            (20,  380, '12F1', 'Total:'),                       (220,  380, '12F6', '%9.2f' % (val*1.02*r)), (300,  380, '9F1', 'EUR'),
+            ] 
+    a = updf(595, 842)
+    return a.gen([page])
+
+def pdf_test(td, own):
+    "_"
+    page = [
+        (410,  18, '12F1', td), 
+        (30,  20, '14F1', own), 
+        ] 
     a = updf(595, 842)
     return a.gen([page])
 
@@ -257,19 +265,19 @@ def application(environ, start_response):
             else:
                 o += ' something wrong in user registration!'
         # igreg()
-        elif reg(re.match(r'^(ig|igreg|immaterial|good)/([^/]{3,50})/([^/]{3,80})/([^/]{1,12})/([^/]{1,12})/([^/]{680,685})$', raw, re.U)): 
+        elif reg(re.match(r'^(ig|igreg|immaterial|good)/([^/]{3,50})/([^/]{3,80})/([^/]{1,12})/([^/]{1,12})/(\d{1,3})/([^/]{680,685})$', raw, re.U)): 
             # checks
-            own, iid, p1, pf, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6)
+            own, iid, p1, pf, xi, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4), reg.v.group(5), reg.v.group(6), reg.v.group(7)
             Iig, Cig, Ppk = b'I_' + bytes(iid, 'utf8'), b'C_' + bytes(iid, 'utf8'), bytes('P_%s' % own, 'utf8')
             if Iig in d.keys():
                 o += 'IG id already set!'
             elif float(p1)<0 or float(pf)<float(1):
                 o += 'bad prices!'
-            elif verify(RSA_E, b64toi(d[Ppk]), '/'.join((today[:10], own, iid, p1, pf)), bytes(sig, 'ascii')):
+            elif verify(RSA_E, b64toi(d[Ppk]), '/'.join((today[:10], own, iid, p1, pf, xi)), bytes(sig, 'ascii')):
                 ra = os.urandom(16)
                 akey = itob64(int(binascii.hexlify(os.urandom(16)), 16))
                 era = encrypt(RSA_E, b64toi(d[Ppk]), akey)
-                d[Iig], d[Cig] = '/'.join((today[:10], p1, pf, own, akey.decode('ascii'))), b' '
+                d[Iig], d[Cig] = '/'.join((today[:10], p1, pf, xi, own, akey.decode('ascii'))), b' '
                 #o = 'IG id registration OK from \'%s\'' % own
                 o, mime = era, 'application/pdf'
             else:
@@ -282,14 +290,14 @@ def application(environ, start_response):
             Iig, Cig = b'I_' + bytes(ig, 'utf8'), b'C_' + bytes(ig, 'utf8')
             if verify(RSA_E, b64toi(d[Pby]), '/'.join((byr, ig, td)), bytes(sig, 'ascii')) and Iig in d.keys() and not (Ttr in d.keys()):
                 tab, tac = d[Iig].decode('utf8').split('/'), d[Cig].decode('utf8').split('/')
-                prc, slr = float(tab[1]), tab[3]
+                prc, slr = float(tab[1]), tab[4]
                 Bsr = b'B_'+bytes(slr, 'utf8')
                 i = len(tac)-1
                 if i == 0:
                     p = prc
                 else:
-                    p1, pf = float(tab[1]), float(tab[2])                    # 6/ get nb, p1, pf
-                    k, xi = math.log(pf-p1) - math.log(pf-2*p1), .25          
+                    p1, pf, xi = float(tab[1]), float(tab[2]), float(tab[3])/100 # 6/ get nb, p1, pf, xi
+                    k = math.log(pf-p1) - math.log(pf-2*p1)          
                     p = (pf - (pf-p1)*math.exp(-xi*i*k))/(i+1)               # new price
                     dt = (pf-p1)*(math.exp(-xi*(i-1)*k) - math.exp(-xi*i*k)) # new delta
                     rfd = (p-dt)/i                                           # 7/ update prices
@@ -303,7 +311,7 @@ def application(environ, start_response):
                             d[bytes('T_%s_%04d' %(sig[:15], j), 'ascii')] = '/'.join((td, ig, 'refund', cst, '0', '%s' % rfd))
                     d[Cig] += b'/' + bytes(byr, 'utf8')
                     d[Ttr] = '/'.join((td, ig, byr, slr, '%s' % p, '%s' % (p if i== 0 else dt))) 
-                    era = encrypt(RSA_E, b64toi(d[Pby]), bytes(tab[4], 'ascii'))
+                    era = encrypt(RSA_E, b64toi(d[Pby]), bytes(tab[5], 'ascii'))
                     o, mime = era, 'application/pdf'
                 else:
                     o += 'account not funded!'
@@ -323,7 +331,7 @@ def application(environ, start_response):
                 tac = d[Cig].decode('utf8').split('/')
                 if len(tac)>1 and byr in tac:
                     o = '%d' % len(tac)-1 # send number of customers
-                    o, mime = receipt('td', 'ig', 'owner', 'byr', 'url', 1, 'sig'), 'application/pdf'
+                    o, mime = pdf_receipt('td', 'ig', 'owner', 'byr', 'url', 1, 'sig'), 'application/pdf'
                 else:
                     o += 'not client!'
             else:
@@ -338,11 +346,22 @@ def application(environ, start_response):
                         if owr in d[x].decode('utf8').split('/'):
                             res += '/' + reg.v.group(1)
                     if reg(re.match('I_(.*)$', x.decode('utf8'))):
-                        if owr == d[x].decode('utf8').split('/')[3]:
+                        if owr == d[x].decode('utf8').split('/')[4]:
                             res += '/' + reg.v.group(1)
                 o = res
             else:
                 o += 'playlist empty!'
+        # receipt()
+        elif reg(re.match(r'^(receipt)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
+            own, sig = reg.v.group(2), reg.v.group(3)
+            Bow, Oow, Pow = b'B_'+bytes(own, 'utf8'), b'O_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
+            if verify(RSA_E, b64toi(d[Pow]), '/'.join(('rp', own, today[:10])), bytes(sig, 'ascii')):
+                own1 = own
+                try: own1.encode('ascii')
+                except: own1 = ('%s' % bytes(own1, 'utf8'))[2:-1]
+                o, mime = pdf_test(today[:19], own1), 'application/pdf'
+            else:
+                o += 'pdf receipt reading!'            
         # statement()
         elif reg(re.match(r'^(state|statement)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
             own, sig = reg.v.group(2), reg.v.group(3)
@@ -441,7 +460,7 @@ def frontpage(today, ip):
             v2 += float(tab[5])
             tr += 1
     d.close()
-    assert(abs(v1-v2) < PRECISION and abs(ck) < PRECISION)
+    #assert(abs(v1-v2) < PRECISION and abs(ck) < PRECISION)
     o = '<?xml version="1.0" encoding="utf8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
     o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}text.foot{font-size:18pt;fill:gray;text-anchor:middle;}text.rate{font-family:courier; font-size:9pt; fill:#333;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:middle}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}input{padding:5px;border:1px solid #D1D1D2;border-radius:10px;font-size:24px;}input[type="text"]{color:#999;}input[type="submit"]{color:#FFF;}</style>\n'
@@ -682,18 +701,15 @@ class updf:
 
     def sgen(self, par):
         "stream parser"
-        ff, other = par[2].split('F'), False
-        o = '1 0 0 1 %s %s Tm /F%s %s Tf %s TL ' % (par[0]+self.mx, self.ph-par[1]-self.my, ff[1], ff[0], 1.2*int(ff[0]))
-        for m in re.compile(r'([^\n]+)').finditer(par[3]):
-            o += '%s[(%s)]TJ ' % ('T* ' if other else '', self.kern(m.group(1), self.afm[int(ff[1])-1])) 
-            other = True
-        #for m in re.compile(r'(/(\d+)F(\d+)\{([^\}]*)\}|([^\n/]+))').finditer(par[3]):
-        #    if m.group(5):
-        #        o += '%s[(%s)]TJ ' % ('T* ' if other else '', self.kern(m.group(5), self.afm[int(ff[1])-1])) 
-        #        other = True
-        #    if m.group(2) and m.group(4) and m.group(3):
-        #        other = False
-        #        o += '/F%s %s Tf [(%s)]TJ /F%s %s Tf ' % (m.group(3), m.group(2), self.kern(m.group(4), self.afm[int(ff[1])-1]), ff[1], ff[0])
+        if par[3] == '⊔':
+            w, x, y = int(par[2].split('F')[0]), par[0]+self.mx, self.ph-par[1]-self.my
+            o = '.11 .35 1.0 rg %s %s %s %s re %s %s %s %s re %s %s %s %s re f 0 0 0 rg ' % (x, y, w, w/4, x, y, w/4, 1.5*w, x+w, y, w/4, 1.5*w)
+        else:
+            ff, other = par[2].split('F'), False
+            o = '1 0 0 1 %s %s Tm /F%s %s Tf %s TL ' % (par[0]+self.mx, self.ph-par[1]-self.my, ff[1], ff[0], 1.2*int(ff[0]))
+            for m in re.compile(r'([^\n]+)').finditer(par[3]):
+                o += '%s[(%s)]TJ ' % ('T* ' if other else '', self.kern(m.group(1), self.afm[int(ff[1])-1])) 
+                other = True
         return o
 
     def gen(self, document):
@@ -703,12 +719,14 @@ class updf:
         self.add('/Linearized 1.0/L 1565/H [570 128]/O 11/E 947/N 111/T 1367')
         ref, kids, seenall, fref, h, firstp = [], '', {}, [], {}, 0
         for p, page in enumerate(document):
-            t = bytes('BT 1 w 0.9 0.9 0.9 RG %s %s %s %s re S 0 0 0 RG 0 Tc ' % (self.mx, self.my, self.pw-2*self.mx, self.ph-2*self.my), 'ascii')
+            w, x, y = 12, 26, 798
+            t = bytes('.11 .35 1 rg %s %s %s %s re %s %s %s %s re %s %s %s %s re f ' % (x, y, w, w/4, x, y, w/4, 1.5*w, x+w, y, w/4, 1.5*w),'ascii')
+            t += bytes('BT 1 w 0.9 0.9 0.9 RG %s %s %s %s re S 0 0 0 RG 0 Tc ' % (self.mx, self.my, self.pw-2*self.mx, self.ph-2*self.my), 'ascii')
             t += b'0.99 0.99 0.99 rg 137 150 50 400 re f 137 100 321 50 re f 408 150 50 400 re f '
             t += b'0.88 0.95 1.0 rg 44 600 505 190 re f '
             t += b'1.0 1.0 1.0 rg 1 0 0 1 60 680 Tm /F1 60 Tf (Put your Ads here)Tj 0.0 0.0 0.0 rg '
             t += b'0.9 0.9 0.9 rg 499 740 50 50 re f '
-            t += b'1.0 1.0 1.0 rg 1 0 0 1 512 776 Tm 14 TL /F1 12 Tf (Ads)Tj T* (QR)Tj T* (Code)Tj 0.0 0.0 0.0 rg '
+            t += b'1.0 1.0 1.0 rg 1 0 0 1 512 776 Tm 14 TL /F1 12 Tf (Ads)Tj T* (QR)Tj T* (Code)Tj 0.0 0 0 rg '
             for par in page: t += bytes(self.sgen(par), 'ascii')
             t += b'ET\n'
             #t1 = bytes('/P <</MCID 0>> BDC BT 1 0 0 1 10 20 Tm /F1 12 Tf (HELLO)Tj ET EMC /Link <</MCID 1>> BDC BT 1 0 0 1 100 20 Tm /F1 16 Tf (With a link)Tj ET EMC', 'ascii')
@@ -1015,6 +1033,17 @@ if __name__ == '__main__':
         }    
     man, woman, ig, host = 'Laurent Fournier', 'Valérie Fournier', 'myig_您1', 'localhost'
     host = 'pi.pelinquin.fr'
+
+
+    url = 'www.creditmutuel.fr/groupe/fr/index.html'.split('/')
+    co = http.client.HTTPSConnection(url[0])
+    co.request('GET', '/' + '/'.join(url[1:]))
+    res = co.getresponse()
+    if res.reason == 'OK':
+        print ('OK')
+    else:
+        print (res.status, res.msg['location'])
+
     sys.exit()
 
 # End ⊔net!

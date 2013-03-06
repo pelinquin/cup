@@ -33,7 +33,7 @@
 
 __owner__ = 'Laurent Fournier'
 
-import re, os, sys, math, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools, subprocess
+import re, os, sys, math, urllib.parse, hashlib, http.client, base64, dbm, binascii, datetime, zlib, functools, subprocess, time
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import AES
 
@@ -77,7 +77,7 @@ def application(environ, start_response):
     else:
         raw, way = urllib.parse.unquote(environ['QUERY_STRING']), 'get'
     fr = 'on' if 'HTTP_COOKIE' in environ and re.search(r'fr=on', environ['HTTP_COOKIE']) else None
-    login = reg.v.group(1) if 'HTTP_COOKIE' in environ and reg(re.search(r'user=([^;]+)$', environ['HTTP_COOKIE'])) else ''
+    login = reg.v.group(1) if 'HTTP_COOKIE' in environ and reg(re.search(r'user=([^;]+)', environ['HTTP_COOKIE'])) else ''
     d = dbm.open(db[:-3], 'c')
     if way == 'post':
         if environ['CONTENT_TYPE'] == 'application/x-www-form-urlencoded':
@@ -85,43 +85,47 @@ def application(environ, start_response):
                 login, pw1, pw2, sid = reg.v.group(1), reg.v.group(2), reg.v.group(3), reg.v.group(4)
                 if pw1==pw2 and pw1!=login and not login.encode('utf8') in d.keys():
                     ncok = [('set-cookie', 'user=%s' % login)]
-                    #d['PW_'+login] = hashlib.sha1('%s/%s' % (login.encode('utf8'),pw1.encode('utf8'))).hexdigest()
-                    d['PW_'+login] = hashlib.sha1(pw1.encode('utf8')).hexdigest()
+                    d['P_'+login] = hashlib.sha1(bytes('%s/%s' % (login, pw1), 'utf8')).hexdigest()
                     k = RSA.generate(4096, os.urandom)
-                    d['PK_' + login] = bytes(' '.join([itob64(x).decode('ascii') for x in (k.e, k.d, k.n)]), 'ascii')
-                    ki, kb = [b64toi(x) for x in d['PK_' + login].split()], [x for x in d['PK_' + login].split()]
+                    d['K_' + login] = bytes(' '.join([itob64(x).decode('ascii') for x in (k.e, k.d, k.n)]), 'ascii')
+                    ki, kb = [b64toi(x) for x in d['K_' + login].split()], [x for x in d['K_' + login].split()]
                     register(login, ki, kb, sid) 
                     o, mime = frontpage(today, environ['REMOTE_ADDR'], d, fr, login), 'application/xhtml+xml; charset=utf8'
                 else:
                     o += 'login may already used or password too short or difference in the two passwords!'
             elif reg(re.match('lgn=([^&]{3,})&pw1=(.{4,})$', urllib.parse.unquote(raw.decode('utf8')))):
                 login, pw = reg.v.group(1), reg.v.group(2)
-                if b'PW_'+login.encode('utf8') in d.keys() and d['PW_'+login] == hashlib.sha1(pw.encode('utf8')).hexdigest().encode('utf8'):
-                    ncok = [('set-cookie', 'user=%s' % login)]
+                if b'P_'+login.encode('utf8') in d.keys() and d['P_'+login] == hashlib.sha1(bytes('%s/%s' % (login, pw), 'utf8')).hexdigest().encode('utf8'):
+                    sid = base64.urlsafe_b64encode(hashlib.sha1(bytes(repr(time.time()),'ascii')).digest())[:20] # TODO!
+                    ncok = [('set-cookie', 'user=%s' % login), ('set-cookie', 'sid=%s' % sid.decode('ascii'))]
                     o, mime = frontpage(today, environ['REMOTE_ADDR'], d, fr, login), 'application/xhtml+xml; charset=utf8'  
                 else:
                     o += 'bad login or bad password!'                    
             elif re.match('act=logout$', urllib.parse.unquote(raw.decode('utf8'))):
                 login = ''
-                ncok = [('set-cookie', 'user=')]
+                ncok = [('set-cookie', 'user='), ('set-cookie', 'sid=')]
                 o, mime = frontpage(today, environ['REMOTE_ADDR'], d, fr, login), 'application/xhtml+xml; charset=utf8'
             elif reg(re.match('ig=([^&]+)', urllib.parse.unquote(raw.decode('utf8')))):
-                ki = [b64toi(x) for x in d['PK_' + login].split()]
-                buy(login, reg.v.group(1), ki) 
+                if login:
+                    ki = [b64toi(x) for x in d['K_' + login].split()]
+                    buy(login, reg.v.group(1), ki) 
                 o, mime = frontpage(today, environ['REMOTE_ADDR'], d, fr, login), 'application/xhtml+xml; charset=utf8'
             elif reg(re.match('get=([^&]+)', urllib.parse.unquote_plus(raw.decode('utf8')))):
-                ki = [b64toi(x) for x in d['PK_' + login].split()]
+                ki = [b64toi(x) for x in d['K_' + login].split()]
                 ig = reg.v.group(1)
                 #ncl = isclient(__owner__, login, ig)
                 fpdf = '/cup/%s/%s.pdf' % (__user__, ig)
                 content = open(fpdf.encode('utf8'), 'rb').read()
                 o, mime, fname = content, 'application/pdf', ig + '.pdf'                 
             elif reg(re.match('val=([^&]+)&act=invoice$', urllib.parse.unquote(raw.decode('utf8')))):
-                ki = [b64toi(x) for x in d['PK_' + login].split()]
+                ki = [b64toi(x) for x in d['K_' + login].split()]
                 o, mime, fname = conversion(login, float(reg.v.group(1)), ki), 'application/pdf', 'invoice.pdf'                 
             elif re.match('act=statement$', urllib.parse.unquote(raw.decode('utf8'))):
-                ki = [b64toi(x) for x in d['PK_' + login].split()]
+                ki = [b64toi(x) for x in d['K_' + login].split()]
                 o, mime, fname = statement(login, ki), 'application/pdf', 'statement.pdf'
+            elif re.match('act=receipt$', urllib.parse.unquote(raw.decode('utf8'))):
+                ki = [b64toi(x) for x in d['K_' + login].split()]
+                o, mime, fname = receipt(login, ki), 'application/pdf', 'statement.pdf'
             else:
                 o += 'something wrong in the input text! %s' % raw
         else:
@@ -131,8 +135,9 @@ def application(environ, start_response):
             tail = 2+len(b'\r\n'.join(le[-14:]))
             open(bytes ('/cup/%s/' % __user__, 'utf8') + fn.encode('utf8'), 'wb').write(raw[t:-tail])
             xi, pi, p1 = int(le[-3]), float(le[-7]), float(le[-11])
-            ki = [b64toi(x) for x in d['PK_'+login].split()]
-            igreg(login, fn, p1, pi, ki)
+            ki = [b64toi(x) for x in d['K_'+login].split()]
+            #o = '%s %s %s' % (p1, pi, xi)
+            igreg(login, fn, p1, pi, xi, ki)
             o, mime = frontpage(today, environ['REMOTE_ADDR'], d, fr, login), 'application/xhtml+xml; charset=utf8'
     else:
         log(raw, environ['REMOTE_ADDR'])
@@ -144,7 +149,7 @@ def application(environ, start_response):
             o = open('/cup/%s/log' % __user__, 'r', encoding='utf8').read()                
         else:
             o, mime = frontpage(today, environ['REMOTE_ADDR'], d, fr, login), 'application/xhtml+xml; charset=utf8'
-            #o = '%s' % environ['HTTP_COOKIE']
+            #o = '%s \n%s' % (environ['HTTP_COOKIE'], login)
     d.close()
     start_response('200 OK', [('Content-type', mime), ('Content-Disposition', 'filename={}'.format(fname))] + ncok)
     return [o if mime == 'application/pdf' else o.encode('utf8')] 
@@ -159,7 +164,7 @@ def frontpage(today, ip, d, fr, login=''):
     "not in html!"
     o = '<?xml version="1.0" encoding="utf8"?>\n' 
     o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
-    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}a,text.a{fill:Dodgerblue;}text.foot{font-size:14pt;fill:gray;text-anchor:start;}text.foot1{font-size:12pt;fill:gray;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:start;}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}input,button{padding:2px;margin:1px;border:1px solid #D1D1D2;border-radius:3px;font-size:12px;}input[type="text"],input[type="password"]{color:#999;width:66px;}input[type="submit"],button{color:#fff}input[type="file"]{color:#999;}input[type="submit"].blue{background-color:Dodgerblue;font-size:14pt;border-radius:8px}</style>\n'
+    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}a,text.a{fill:Dodgerblue;}text.foot{font-size:14pt;fill:gray;text-anchor:start;}text.foot1{font-size:12pt;fill:gray;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:start;}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}input,button{padding:2px;margin:1px;border:1px solid #D1D1D2;border-radius:3px;font-size:12px;}input[type="text"],input[type="password"]{color:#999;width:66px;}input.sid{width:150px;}input[type="submit"],button{color:#fff; background-color:#AAA;}input[type="file"]{color:#999;}input[type="submit"].blue{background-color:Dodgerblue;font-size:14pt;border-radius:8px}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="80" y="70" font-size="45">%s</text>\n' % __user__
     if login:
@@ -170,7 +175,7 @@ def frontpage(today, ip, d, fr, login=''):
         o += '<input class="right" type="submit" name="act" value="logout"/>\n'        
         o += '</form></div></foreignObject>\n'
         
-        ki = [b64toi(x) for x in d['PK_' + login].split()]
+        ki = [b64toi(x) for x in d['K_' + login].split()]
         [bal, ovd] = balance(login, ki).split() 
         o += '<text class="note" x="240" y="98%%">Balance: %s ⊔ Overdraft: %s ⊔</text>\n' % (bal, ovd)
 
@@ -191,11 +196,11 @@ def frontpage(today, ip, d, fr, login=''):
         o += '<input type="submit" value="create IG"/>\n'
         o += '</form></div></foreignObject>\n'
     else:
-        o += '<foreignObject x="200" y="10" width="400" height="30"><div %s><form method="post">\n' % _XHTMLNS
+        o += '<foreignObject x="200" y="10" width="500" height="30"><div %s><form method="post">\n' % _XHTMLNS
         o += '<input type="text"     name="lgn" placeholder="name" required="yes"/>'
         o += '<input type="password" name="pw1" placeholder="password"  required="yes"/>'
         o += '<input type="password" name="pw2" placeholder="pw again!" required="yes"/>'
-        o += '<input type="text"     name="sid" placeholder="social id" required="yes" title="Your Social Security Number to get 100⊔ overdraft"/>'
+        o += '<input class="sid" type="text" name="sid" placeholder="https bank url or social id" required="yes" title="Your Social Security Number to get 100⊔ overdraft"/>'
         o += '<input type="submit"   value="register"/>\n'
         o += '</form></div></foreignObject>\n'
         o += '<foreignObject x="200" y="36" width="400" height="30"><div %s><form method="post">\n' % _XHTMLNS
@@ -203,33 +208,35 @@ def frontpage(today, ip, d, fr, login=''):
         o += '<input type="password" name="pw1" placeholder="password" required="yes"/>'
         o += '<input type="submit"   value="login"/>\n'
         o += '</form></div></foreignObject>\n'
-
     if ip == '127.0.0.1': 
         o += '<text class="note" x="160" y="90"  title="my ip adress">local server</text>\n'
     i, dte, pl = 0, 32 ,[]
     if login:
-        ki = [b64toi(x) for x in d['PK_'+login].split()]
+        ki = [b64toi(x) for x in d['K_'+login].split()]
         pl = playlist(login, ki).split('/')
     for x in format_cmd(False, 'list', False).split('\n'):
         tab = x.split('/')
         if os.path.isfile (bytes('/cup/%s/%s' % (__user__, tab[0]), 'utf8')):
             i +=1
-            p1, pf, n = float(tab[2]), float(tab[3]), int(tab[5])
+            p1, pf, n = float(tab[2]), float(tab[3]), int(tab[6])
             k, xi = math.log(pf-p1) - math.log(pf-2*p1), .25          
             price = (pf - (pf-p1)*math.exp(-xi*n*k))/(n+1)               
             o += '<text class="note" x="480" y="%s">%s</text>\n' % (110+dte*i, tab[1])
-            o += '<text class="note" x="540" y="%s" title="author">%s</text>\n' % (110+dte*i, tab[4])
-            o += '<text class="note" x="102" y="%s" title="number of buyers">%04d</text>\n' % (110+dte*i, int(tab[5]))
+            o += '<text class="note" x="540" y="%s" title="author">%s</text>\n' % (110+dte*i, tab[5])
+            o += '<text class="note" x="102" y="%s" title="number of buyers">%04d</text>\n' % (110+dte*i, int(tab[6]))
+            #if login:
             o += '<foreignObject x="10" y="%s" width="80" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
             o += '<input type="hidden" name="ig" value="%s"/>\n' % tab[0]        
             o += '<input type="submit" name="buy" value="%7.2f⊔" title="max income: %s⊔"/>\n' % (price, tab[3])        
             o += '</form></div></foreignObject>\n'
+            #else:
+            #    o += '<text class="note" x="60" y="%s" title="price">%7.2f⊔%9.0f</text>\n' % (110+dte*i, price, float(tab[3]))
             if tab[0] in pl:
                 o += '<foreignObject x="120" y="%s" width="200" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
                 o += '<input class="blue" type="submit" name="get" value="%s"/>\n' % (tab[0][:-4])        
                 o += '</form></div></foreignObject>\n'
                 o += '<foreignObject x="560" y="%s" width="60" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
-                o += '<input type="submit" name="rcp" value="receipt"/>\n'         
+                o += '<input type="submit" name="act" value="receipt"/>\n'         
                 o += '</form></div></foreignObject>\n'
             else:
                 o += '<text class="foot" x="120" y="%s">%s</text>\n' % (110+dte*i, tab[0][:-4])                
@@ -305,11 +312,11 @@ def register(owner, ki, kb, iduser='anonymous', host='localhost', post=False):
     cmd = '/'.join(('reg', owner, iduser, kb[2].decode('ascii'), s.decode('ascii')))
     return format_cmd(post, cmd)
 
-def igreg(owner, idig, p1, pf, ki, host='localhost', post=False):
+def igreg(owner, idig, p1, pf, xi, ki, host='localhost', post=False):
     "_"
     td = '%s' % datetime.datetime.now()
-    s = sign(ki[1], ki[2], '/'.join((td[:10], owner, idig, '%s' % p1, '%s' % pf)))
-    cmd = '/'.join(('ig', owner, idig, '%s' % p1, '%s' % pf, s.decode('ascii')))
+    s = sign(ki[1], ki[2], '/'.join((td[:10], owner, idig, '%s' % p1, '%s' % pf, '%s' % xi)))
+    cmd = '/'.join(('ig', owner, idig, '%s' % p1, '%s' % pf, '%s' % xi, s.decode('ascii')))
     era = format_cmd(post, cmd, True)
     if era[:5] != b'Error':
         sk = decrypt(ki[1], ki[2], era)
@@ -344,6 +351,13 @@ def statement(own, ki, host='localhost', post=False):
     cmd = '/'.join(('statement', own, s.decode('ascii')))
     return format_cmd(post, cmd, True)
 
+def receipt(own, ki, host='localhost', post=False):
+    "_"
+    td = '%s' % datetime.datetime.now()
+    s = sign(ki[1], ki[2], '/'.join(('rp', own, td[:10])))
+    cmd = '/'.join(('receipt', own, s.decode('ascii')))
+    return format_cmd(post, cmd, True)
+
 def conversion(own, val, ki, host='localhost', post=False):
     "_"
     td = '%s' % datetime.datetime.now()
@@ -363,7 +377,7 @@ if __name__ == '__main__':
 
     d = dbm.open('/cup/node/keys')
     login = 'laurent'
-    ki = [b64toi(x) for x in d['PK_' + login].split()]
+    ki = [b64toi(x) for x in d['K_' + login].split()]
     d.close()
     #content = statement(login, ki)
     content = conversion(login, 2.5, ki)
