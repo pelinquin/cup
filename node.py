@@ -20,14 +20,15 @@
 #-----------------------------------------------------------------------------
 "_"
 
-# SHORT TODO LIST (just for me!)
-# - Unicode inside PDF
+# SHORT TODO LIST (just to remind me!)
+# - Unicode inside PDF (except for ⊔)
 # - Fix SVG position relative to right side
 # - Add session key
 # - Add wait alert when registering
 # - Use/test several nodes
 # - SRP authentication
 # - Implement the 'share' request for co-authors
+# - Implement the 'deny' request 
 # - Add thunbnail covers in jpeg
 # - Replace RSA with eliptic curves
 
@@ -81,7 +82,7 @@ def application(environ, start_response):
     d = dbm.open(db[:-3], 'c')
     if way == 'post':
         if environ['CONTENT_TYPE'] == 'application/x-www-form-urlencoded':
-            if reg(re.match('lgn=([^&]{3,})&pw1=([^&]{4,})&pw2=([^&]+)&sid=(.+)$', urllib.parse.unquote(raw.decode('utf8')))):
+            if reg(re.match('lgn=([^&]{3,})&pw1=([^&]{4,})&pw2=([^&]+)&sid=(.+)$', urllib.parse.unquote_plus(raw.decode('utf8')))):
                 login, pw1, pw2, sid = reg.v.group(1), reg.v.group(2), reg.v.group(3), reg.v.group(4)
                 if pw1==pw2 and pw1!=login and not login.encode('utf8') in d.keys():
                     ncok = [('set-cookie', 'user=%s' % login)]
@@ -93,7 +94,7 @@ def application(environ, start_response):
                     o, mime = frontpage(today, environ['REMOTE_ADDR'], d, fr, login), 'application/xhtml+xml; charset=utf8'
                 else:
                     o += 'login may already used or password too short or difference in the two passwords!'
-            elif reg(re.match('lgn=([^&]{3,})&pw1=(.{4,})$', urllib.parse.unquote(raw.decode('utf8')))):
+            elif reg(re.match('lgn=([^&]{3,})&pw1=(.{4,})$', urllib.parse.unquote_plus(raw.decode('utf8')))):
                 login, pw = reg.v.group(1), reg.v.group(2)
                 if b'P_'+login.encode('utf8') in d.keys() and d['P_'+login] == hashlib.sha1(bytes('%s/%s' % (login, pw), 'utf8')).hexdigest().encode('utf8'):
                     sid = base64.urlsafe_b64encode(hashlib.sha1(bytes(repr(time.time()),'ascii')).digest())[:20] # TODO!
@@ -105,10 +106,10 @@ def application(environ, start_response):
                 login = ''
                 ncok = [('set-cookie', 'user='), ('set-cookie', 'sid=')]
                 o, mime = frontpage(today, environ['REMOTE_ADDR'], d, fr, login), 'application/xhtml+xml; charset=utf8'
-            elif reg(re.match('ig=([^&]+)', urllib.parse.unquote(raw.decode('utf8')))):
+            elif reg(re.match('ig=([^&]+)', urllib.parse.unquote_plus(raw.decode('utf8')))):
                 if login:
                     ki = [b64toi(x) for x in d['K_' + login].split()]
-                    buy(login, reg.v.group(1), ki) 
+                    buy(login, reg.v.group(1), ki)
                 o, mime = frontpage(today, environ['REMOTE_ADDR'], d, fr, login), 'application/xhtml+xml; charset=utf8'
             elif reg(re.match('get=([^&]+)', urllib.parse.unquote_plus(raw.decode('utf8')))):
                 ki = [b64toi(x) for x in d['K_' + login].split()]
@@ -223,7 +224,7 @@ def frontpage(today, ip, d, fr, login=''):
             price = (pf - (pf-p1)*math.exp(-xi*n*k))/(n+1)               
             o += '<text class="note" x="480" y="%s">%s</text>\n' % (110+dte*i, tab[1])
             o += '<text class="note" x="540" y="%s" title="author">%s</text>\n' % (110+dte*i, tab[5])
-            o += '<text class="note" x="102" y="%s" title="number of buyers">%04d</text>\n' % (110+dte*i, int(tab[6]))
+            o += '<text class="note" x="122" y="%s" title="number of buyers">%04d</text>\n' % (110+dte*i, int(tab[6]))
             #if login:
             o += '<foreignObject x="10" y="%s" width="80" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
             o += '<input type="hidden" name="ig" value="%s"/>\n' % tab[0]        
@@ -232,7 +233,7 @@ def frontpage(today, ip, d, fr, login=''):
             #else:
             #    o += '<text class="note" x="60" y="%s" title="price">%7.2f⊔%9.0f</text>\n' % (110+dte*i, price, float(tab[3]))
             if tab[0] in pl:
-                o += '<foreignObject x="120" y="%s" width="200" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
+                o += '<foreignObject x="140" y="%s" width="300" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
                 o += '<input class="blue" type="submit" name="get" value="%s"/>\n' % (tab[0][:-4])        
                 o += '</form></div></foreignObject>\n'
                 o += '<foreignObject x="560" y="%s" width="60" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
@@ -379,9 +380,11 @@ if __name__ == '__main__':
     login = 'laurent'
     ki = [b64toi(x) for x in d['K_' + login].split()]
     d.close()
+    toto = buy(login, "L'économie_de_la_culture (1).pdf", ki)
+    print (toto)
     #content = statement(login, ki)
-    content = conversion(login, 2.5, ki)
-    open(bytes ('toto.pdf', 'utf8'), 'wb').write(content)
+    #content = conversion(login, 2.5, ki)
+    #open(bytes ('toto.pdf', 'utf8'), 'wb').write(content)
     
     sys.exit()
 # End ⊔net!
