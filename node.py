@@ -184,7 +184,7 @@ def frontpage(today, ip, d, fr, login=''):
         o += '<input type="submit" name="act" value="statement"/>\n'        
         o += '</form></div></foreignObject>\n'
 
-        o += '<foreignObject x="92%%" y="90" width="100" height="70"><div %s><form method="post">\n' % _XHTMLNS
+        o += '<foreignObject x="92%%" y="70" width="100" height="70"><div %s><form method="post">\n' % _XHTMLNS
         o += '<input type="text" name="val" placeholder="amount" required="yes" title="in your overdraft limit!"/>⊔ <br/>'
         o += '<input type="submit" name="act" value="invoice"/>\n'        
         o += '</form></div></foreignObject>\n'
@@ -222,8 +222,8 @@ def frontpage(today, ip, d, fr, login=''):
             p1, pf, n = float(tab[2]), float(tab[3]), int(tab[6])
             k, xi = math.log(pf-p1) - math.log(pf-2*p1), .25          
             price = (pf - (pf-p1)*math.exp(-xi*n*k))/(n+1)               
-            o += '<text class="note" x="480" y="%s">%s</text>\n' % (110+dte*i, tab[1])
-            o += '<text class="note" x="540" y="%s" title="author">%s</text>\n' % (110+dte*i, tab[5])
+            o += '<text class="note" x="590" y="%s">%s</text>\n' % (110+dte*i, tab[1])
+            o += '<text class="note" x="640" y="%s" title="author">%s</text>\n' % (110+dte*i, tab[5])
             o += '<text class="note" x="122" y="%s" title="number of buyers">%04d</text>\n' % (110+dte*i, int(tab[6]))
             #if login:
             o += '<foreignObject x="10" y="%s" width="80" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
@@ -232,15 +232,16 @@ def frontpage(today, ip, d, fr, login=''):
             o += '</form></div></foreignObject>\n'
             #else:
             #    o += '<text class="note" x="60" y="%s" title="price">%7.2f⊔%9.0f</text>\n' % (110+dte*i, price, float(tab[3]))
+            xpos = 140
             if tab[0] in pl:
-                o += '<foreignObject x="140" y="%s" width="300" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
+                o += '<foreignObject x="%d" y="%s" width="300" height="35"><div %s><form method="post">\n' % (xpos, 90+dte*i, _XHTMLNS)
                 o += '<input class="blue" type="submit" name="get" value="%s"/>\n' % (tab[0][:-4])        
                 o += '</form></div></foreignObject>\n'
-                o += '<foreignObject x="560" y="%s" width="60" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
+                o += '<foreignObject x="92%%" y="%s" width="60" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
                 o += '<input type="submit" name="act" value="receipt"/>\n'         
                 o += '</form></div></foreignObject>\n'
             else:
-                o += '<text class="foot" x="120" y="%s">%s</text>\n' % (110+dte*i, tab[0][:-4])                
+                o += '<text class="foot" x="%d" y="%s">%s</text>\n' % (xpos, 110+dte*i, tab[0][:-4])                
     o += '<text class="note" x="99%%" y="98%%" title="or visit \'%s\'">Contact: %s</text>\n' % (__url__, __email__) 
     return o + '</svg>'
 

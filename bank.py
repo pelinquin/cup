@@ -166,7 +166,7 @@ def pdf_statement(td, own, bal, ovd, h):
     tp = 1 + len(tabb)//size
     for i in range(tp):
         tab = tabb[i*size:(i+1)*size]
-        label = '\n'.join(['%02d/%d %s\n' % (k+1, i+1, x) for k, x in enumerate(tab)])
+        label = '\n'.join(['%02d/%d %s\n' % (k+1, i+1, x[:-15]) for k, x in enumerate(tab)])
         relat = '\n'.join(['%s\n' % h[x][2] for x in tab])
         ig    = '\n'.join(['%s\n' % h[x][1] for x in tab])        
         crdit = '\n'.join([('%09.2f' % h[x][3] if h[x][0] else ' ') for x in tab])
@@ -176,7 +176,7 @@ def pdf_statement(td, own, bal, ovd, h):
                 (30,  20, '14F1', own), (20,  230, '10F1', 'Overdraft:'), (80,  230, '10F3', '%9.0f' % ovd), 
                 (20,  250, '14F1', 'Balance:'), (80, 250, '10F6', '%9.2f' % bal), (c1 if bal>0 else c2, 250, '8F3', '%09.2f' % abs(bal)),
                 (320, 240, '8F3', 'Volume'), (c1, 240, '8F6', '%09.2f' % t2), (c2, 240, '8F6', '%09.2f' % t1), 
-                (12,  260, '8F3', label), (230, 260, '8F1', ig), (320, 260, '8F1', relat), (c1, 260, '8F3', crdit), (c2, 260, '8F3', debit), 
+                (12,  260, '8F3', label), (160, 260, '8F1', ig), (340, 260, '8F1', relat), (c1, 260, '8F3', crdit), (c2, 260, '8F3', debit), 
                 (10,  782, '8F1', url), (500,  782, '8F1', 'page %d/%d' % (i+1, tp))]
         content.append(page)
     a = updf(595, 842)
