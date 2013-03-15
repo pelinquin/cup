@@ -124,9 +124,10 @@ def application(environ, start_response):
             elif re.match('act=statement$', urllib.parse.unquote(raw.decode('utf8'))):
                 ki = [b64toi(x) for x in d['K_' + login].split()]
                 o, mime, fname = statement(login, ki), 'application/pdf', 'statement.pdf'
-            elif re.match('act=receipt$', urllib.parse.unquote(raw.decode('utf8'))):
+            elif reg(re.match('act=PDF\+receipt&prd=(.+)$', urllib.parse.unquote(raw.decode('utf8')))):
                 ki = [b64toi(x) for x in d['K_' + login].split()]
-                o, mime, fname = receipt(login, ki), 'application/pdf', 'statement.pdf'
+                ig = reg.v.group(1)
+                o, mime, fname = receipt(login, ig, ki), 'application/pdf', 'statement.pdf'
             else:
                 o += 'something wrong in the input text! %s' % raw
         else:
@@ -163,14 +164,22 @@ def favicon():
 
 def frontpage(today, ip, d, fr, login=''):
     "not in html!"
+    req = format_cmd(False, 'list', False)
+    i, dte, xd, pl = 0, 104 , 40, []
+    size = len(req.split('\n'))
     o = '<?xml version="1.0" encoding="utf8"?>\n' 
-    o += '<svg %s %s>\n' % (_SVGNS, _XLINKNS) + favicon()
-    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100;}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica;}a,text.a{fill:Dodgerblue;}text.foot{font-size:14pt;fill:gray;text-anchor:start;}text.foot1{font-size:12pt;fill:gray;}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:start;}text.note{fill:#CCC;font-size:9pt;text-anchor:end;}input,button{padding:2px;margin:1px;border:1px solid #D1D1D2;border-radius:3px;font-size:12px;}input[type="text"],input[type="password"]{color:#999;width:66px;}input.sid{width:150px;}input[type="submit"],button{color:#fff; background-color:#AAA;}input[type="file"]{color:#999;}input[type="submit"].blue{background-color:Dodgerblue;font-size:14pt;border-radius:8px}</style>\n'
+    o += '<svg %s %s height="%d">\n' % (_SVGNS, _XLINKNS, 120+size*dte) + favicon()
+    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica}a,text.a{fill:Dodgerblue}text.foot{font-size:14pt;fill:gray;text-anchor:start}text.foot1{font-size:12pt;fill:gray}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:start}text.note{fill:#CCC;font-size:9pt;text-anchor:end}input,button{padding:5px;margin:1px;border:1px solid #D1D1D2;border-radius:3px;font-size:12px}input[type="text"],input[type="password"]{color:#999;width:66px}input.sid{width:150px}input[type="submit"],button{color:#fff; background-color:#AAA;border:none}input[type="file"]{color:#999}input[type="submit"].blue{background-color:Dodgerblue;font-size:14pt;border-radius:8px}rect{fill:none;stroke:dodgerBlue;stroke-width:.2}input[type="submit"]:hover{background-color:#F87217}input.sh{padding:5px;border-radius:10px;font-size:24px}input.sh[type="text"]{width:400px}</style>\n'
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="80" y="70" font-size="45">%s</text>\n' % __user__
+    o += '<a xlink:href="/bank"><text class="a" x="120" y="30">Bank</text></a>\n'
+
+    o += '<foreignObject x="30%%" y="100" width="600" height="100"><div %s><form method="post">\n' % _XHTMLNS
+    o += '<input class="sh" type="text" name="q"/><input class="sh" type="submit" value="IG Search" title="Intangible Goods Search Request"/>\n'
+    o += '</form></div></foreignObject>\n'
+
     if login:
         o += '<text class="alpha" font-size="50pt" x="510" y="70">%s</text>\n' % login
-        o += '<a xlink:href="/bank"><text class="a" x="120" y="30">Bank</text></a>\n'
 
         o += '<foreignObject x="92%%" y="10" width="100" height="30"><div %s><form method="post">\n' % _XHTMLNS
         o += '<input class="right" type="submit" name="act" value="logout"/>\n'        
@@ -178,7 +187,8 @@ def frontpage(today, ip, d, fr, login=''):
         
         ki = [b64toi(x) for x in d['K_' + login].split()]
         [bal, ovd] = balance(login, ki).split() 
-        o += '<text class="note" x="240" y="98%%">Balance: %s ⊔ Overdraft: %s ⊔</text>\n' % (bal, ovd)
+        o += '<text class="foot" x="20" y="122">Balance: %s ⊔</text><text class="foot" x="20" y="150">Overdraft: %s ⊔</text>\n' % (bal, ovd)
+
 
         o += '<foreignObject x="92%%" y="40" width="100" height="30"><div %s><form method="post">\n' % _XHTMLNS
         o += '<input type="submit" name="act" value="statement"/>\n'        
@@ -189,7 +199,7 @@ def frontpage(today, ip, d, fr, login=''):
         o += '<input type="submit" name="act" value="invoice"/>\n'        
         o += '</form></div></foreignObject>\n'
 
-        o += '<foreignObject x="200" y="10" width="300" height="80"><div %s><form enctype="multipart/form-data" method="post">\n' % _XHTMLNS
+        o += '<foreignObject x="200" y="10" width="300" height="90"><div %s><form enctype="multipart/form-data" method="post">\n' % _XHTMLNS
         o += '<input type="file" name="upfile" accept="pdf/*"/><br/>'
         o += '<input type="text" name="p1" placeholder="p1" required="yes" title=">0"/>⊔ '
         o += '<input type="text" name="ic" placeholder="income" required="yes" title=">0 and >price"/>⊔ '
@@ -204,44 +214,47 @@ def frontpage(today, ip, d, fr, login=''):
         o += '<input class="sid" type="text" name="sid" placeholder="https bank url or social id" required="yes" title="Your Social Security Number to get 100⊔ overdraft"/>'
         o += '<input type="submit"   value="register"/>\n'
         o += '</form></div></foreignObject>\n'
-        o += '<foreignObject x="200" y="36" width="400" height="30"><div %s><form method="post">\n' % _XHTMLNS
+        o += '<foreignObject x="200" y="40" width="400" height="30"><div %s><form method="post">\n' % _XHTMLNS
         o += '<input type="text"     name="lgn" placeholder="name" required="yes"/>'
         o += '<input type="password" name="pw1" placeholder="password" required="yes"/>'
         o += '<input type="submit"   value="login"/>\n'
         o += '</form></div></foreignObject>\n'
     if ip == '127.0.0.1': 
         o += '<text class="note" x="160" y="90"  title="my ip adress">local server</text>\n'
-    i, dte, pl = 0, 32 ,[]
+
     if login:
         ki = [b64toi(x) for x in d['K_'+login].split()]
         pl = playlist(login, ki).split('/')
-    for x in format_cmd(False, 'list', False).split('\n'):
+    for x in req.split('\n'):
         tab = x.split('/')
         if os.path.isfile (bytes('/cup/%s/%s' % (__user__, tab[0]), 'utf8')):
+            fpdf, fpng = '/cup/%s/%s[0]' % (__user__, tab[0]), '/cup/%s/%spng' % (__user__, tab[0][:-3])
+            xpos, ypos = 120+xd, 100
+            if not os.path.isfile (bytes('/cup/%s/%spng' % (__user__, tab[0][:-3]), 'utf8')):
+                subprocess.call(('convert', '-thumbnail', 'x300', fpdf.encode('utf8') , fpng.encode('utf8')))
             i +=1
             p1, pf, n = float(tab[2]), float(tab[3]), int(tab[6])
-            k, xi = math.log(pf-p1) - math.log(pf-2*p1), .25          
+            k, xi = math.log(pf-p1) - math.log(pf-2*p1), .25 
             price = (pf - (pf-p1)*math.exp(-xi*n*k))/(n+1)               
-            o += '<text class="note" x="590" y="%s">%s</text>\n' % (110+dte*i, tab[1])
-            o += '<text class="note" x="640" y="%s" title="author">%s</text>\n' % (110+dte*i, tab[5])
-            o += '<text class="note" x="122" y="%s" title="number of buyers">%04d</text>\n' % (110+dte*i, int(tab[6]))
-            #if login:
-            o += '<foreignObject x="10" y="%s" width="80" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
+            o += '<text class="note" x="%d" y="%s">%s</text>\n' % (xd+400, ypos+ 60+dte*i, tab[1])
+            o += '<text class="note" x="%d" y="%s" title="main author">%s</text>\n' % (xd+450, ypos+60+dte*i, tab[5])
+            o += '<text class="note" x="%d" y="%s" title="number of buyers">%04d</text>\n' % (xd+310, ypos+60+dte*i, n)
+            data = base64.b64encode(open(fpng.encode('utf8'), 'rb').read()).decode('ascii')
+            o += '<image x="%s" height="100" width="100" y="%s" xlink:href="data:image/png;base64,%s"/><rect x="%d" height="100" width="100" y="%s"/>\n' % (xd+10, ypos-20+dte*i, data, xd+10, ypos-20+dte*i)
+            o += '<foreignObject x="%s" y="%s" width="80" height="35"><div %s><form method="post">\n' % (xpos, ypos+40+dte*i, _XHTMLNS)
             o += '<input type="hidden" name="ig" value="%s"/>\n' % tab[0]        
             o += '<input type="submit" name="buy" value="%7.2f⊔" title="max income: %s⊔"/>\n' % (price, tab[3])        
             o += '</form></div></foreignObject>\n'
-            #else:
-            #    o += '<text class="note" x="60" y="%s" title="price">%7.2f⊔%9.0f</text>\n' % (110+dte*i, price, float(tab[3]))
-            xpos = 140
             if tab[0] in pl:
-                o += '<foreignObject x="%d" y="%s" width="300" height="35"><div %s><form method="post">\n' % (xpos, 90+dte*i, _XHTMLNS)
+                o += '<foreignObject x="%d" y="%s" width="300" height="35"><div %s><form method="post">\n' % (xpos, ypos+dte*i, _XHTMLNS)
                 o += '<input class="blue" type="submit" name="get" value="%s"/>\n' % (tab[0][:-4])        
                 o += '</form></div></foreignObject>\n'
-                o += '<foreignObject x="92%%" y="%s" width="60" height="35"><div %s><form method="post">\n' % (90+dte*i, _XHTMLNS)
-                o += '<input type="submit" name="act" value="receipt"/>\n'         
+                o += '<foreignObject x="%d" y="%s" width="90" height="35"><div %s><form method="post">\n' % (xpos+70, ypos+40+dte*i, _XHTMLNS)
+                o += '<input type="submit" name="act" value="PDF receipt"/>\n'         
+                o += '<input type="hidden" name="prd" value="%s"/>\n' % tab[0]        
                 o += '</form></div></foreignObject>\n'
             else:
-                o += '<text class="foot" x="%d" y="%s">%s</text>\n' % (xpos, 110+dte*i, tab[0][:-4])                
+                o += '<text class="foot" x="%d" y="%s">%s</text>\n' % (xpos, ypos+20+dte*i, tab[0][:-4])                
     o += '<text class="note" x="99%%" y="98%%" title="or visit \'%s\'">Contact: %s</text>\n' % (__url__, __email__) 
     return o + '</svg>'
 
@@ -353,11 +366,11 @@ def statement(own, ki, host='localhost', post=False):
     cmd = '/'.join(('statement', own, s.decode('ascii')))
     return format_cmd(post, cmd, True)
 
-def receipt(own, ki, host='localhost', post=False):
+def receipt(own, ig, ki, host='localhost', post=False):
     "_"
     td = '%s' % datetime.datetime.now()
-    s = sign(ki[1], ki[2], '/'.join(('rp', own, td[:10])))
-    cmd = '/'.join(('receipt', own, s.decode('ascii')))
+    s = sign(ki[1], ki[2], '/'.join(('rp', own, ig, td[:10])))
+    cmd = '/'.join(('receipt', own, ig, s.decode('ascii')))
     return format_cmd(post, cmd, True)
 
 def conversion(own, val, ki, host='localhost', post=False):

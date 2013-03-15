@@ -160,10 +160,11 @@ def pdf_receipt(td, ig, slr, byr, url, ncl, sig):
     a = updf(595, 842)
     return a.gen(content)
 
-def pdf_statement(td, own, bal, ovd, h):
+def pdf_statement(own, bal, ovd, h):
     "_"
     url, size, c1, c2, content, tabb = 'http://cupfoundation.net', 54, 430, 480, [], sorted(h.keys(), reverse=True)
     tp = 1 + len(tabb)//size
+    today = '%s' % datetime.datetime.now()
     for i in range(tp):
         tab = tabb[i*size:(i+1)*size]
         label = '\n'.join(['%02d/%d %s\n' % (k+1, i+1, x[:-15]) for k, x in enumerate(tab)])
@@ -172,7 +173,7 @@ def pdf_statement(td, own, bal, ovd, h):
         crdit = '\n'.join([('%09.2f' % h[x][3] if h[x][0] else ' ') for x in tab])
         debit = '\n'.join([(' ' if h[x][0] else '%09.2f' % h[x][3]) for x in tab])
         t1, t2 = sum([(0 if h[x][0] else h[x][3]) for x in tab]), sum([(h[x][3] if h[x][0] else 0) for x in tab])
-        page = [(410,  18, '12F1', td), 
+        page = [(410,  18, '12F1', today[:19]), 
                 (30,  20, '14F1', own), (20,  230, '10F1', 'Overdraft:'), (80,  230, '10F3', '%9.0f' % ovd), 
                 (20,  250, '14F1', 'Balance:'), (80, 250, '10F6', '%9.2f' % bal), (c1 if bal>0 else c2, 250, '8F3', '%09.2f' % abs(bal)),
                 (320, 240, '8F3', 'Volume'), (c1, 240, '8F6', '%09.2f' % t2), (c2, 240, '8F6', '%09.2f' % t1), 
@@ -197,11 +198,16 @@ def pdf_conversion(td, own, val):
     a = updf(595, 842)
     return a.gen([page])
 
-def pdf_test(td, own):
+def pdf_test(own, ig, attr, li):
     "_"
+    today = '%s' % datetime.datetime.now()
     page = [
-        (410,  18, '12F1', td), 
-        (30,  20, '14F1', own), 
+        (410,  18, '12F1', today[:19]), 
+        (30, 20, '14F1', own), 
+        (20, 260, '14F1', 'Intangible Good:'), 
+        (50, 330, '24F1', ig), 
+        (20, 430, '12F3', attr), 
+        (40, 460, '12F3', li[0]), (40, 480, '12F3', li[1]), (40, 500, '12F3', li[2]), (40, 520, '12F3', li[3]), 
         ] 
     a = updf(595, 842)
     return a.gen([page])
@@ -352,14 +358,23 @@ def application(environ, start_response):
             else:
                 o += 'playlist empty!'
         # receipt()
-        elif reg(re.match(r'^(receipt)/([^/]{3,50})/([^/]{680,685})$', raw, re.U)):
-            own, sig = reg.v.group(2), reg.v.group(3)
+        elif reg(re.match(r'^(receipt)/([^/]{3,50})/([^/]{3,80})/([^/]{680,685})$', raw, re.U)):
+            own, ig, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4)
             Bow, Oow, Pow = b'B_'+bytes(own, 'utf8'), b'O_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
-            if verify(RSA_E, b64toi(d[Pow]), '/'.join(('rp', own, today[:10])), bytes(sig, 'ascii')):
-                own1 = own
-                try: own1.encode('ascii')
-                except: own1 = ('%s' % bytes(own1, 'utf8'))[2:-1]
-                o, mime = pdf_test(today[:19], own1), 'application/pdf'
+            if verify(RSA_E, b64toi(d[Pow]), '/'.join(('rp', own, ig, today[:10])), bytes(sig, 'ascii')):
+                #for x in d.keys():
+                #    if reg(re.match('T_(.*)$', x.decode('utf8'))):
+                Iig, Cig = b'I_' + bytes(ig, 'utf8'), b'C_' + bytes(ig, 'utf8')
+                tab = d[Iig].decode('utf8').split('/')
+                author = tab[4]
+                #nb = len(d[Cig].split('/'))-1
+                try: author.encode('ascii')
+                except: author = ('%s' % bytes(author, 'utf8'))[2:-1]
+                try: own.encode('ascii')
+                except: own = ('%s' % bytes(own, 'utf8'))[2:-1]
+                try: ig.encode('ascii')
+                except: ig = ('%s' % bytes(ig, 'utf8'))[2:-1]
+                o, mime = pdf_test(own, ig[:-4], author, tab[0:4]), 'application/pdf'
             else:
                 o += 'pdf receipt reading!'            
         # statement()
@@ -386,7 +401,7 @@ def application(environ, start_response):
                 own1 = own
                 try: own1.encode('ascii')
                 except: own1 = ('%s' % bytes(own1, 'utf8'))[2:-1]
-                o, mime = pdf_statement(today[:19], own1, float(d[Bow].decode('ascii')), float(d[Oow].decode('ascii')), h), 'application/pdf'
+                o, mime = pdf_statement(own1, float(d[Bow].decode('ascii')), float(d[Oow].decode('ascii')), h), 'application/pdf'
             else:
                 o += 'statement reading!'            
         # balance()
@@ -483,7 +498,7 @@ def frontpage(today, ip):
     o += '<text class="foot" x="62%%" y="88%%" title="number of registered Intangible Goods">%04d IGs</text>\n' % ni
     o += '<text class="foot" x="84%%" y="88%%" title="absolute value">Volume: %09.2f ⊔</text>\n' % v1
     o += '<a xlink:href="bank?src" ><text class="note" x="160" y="98%" title="on GitHub (https://github.com/pelinquin/cup) hack it, share it!">Download the source code!</text></a>\n'
-    #o += '<foreignObject x="10" y="100" width="600" height="100"><div %s><form method="post">\n' % _XHTMLNS
+    #o += '<foreignObject x="40%%" y="100" width="600" height="100"><div %s><form method="post">\n' % _XHTMLNS
     #o += '<input type="text" name="q"/><input type="submit" value="IG Search" title="Intangible Goods Search Request"/>\n'
     #o += '</form></div></foreignObject>\n'
     if ip == '127.0.0.1': 
