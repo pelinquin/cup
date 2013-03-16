@@ -124,12 +124,12 @@ def application(environ, start_response):
             elif re.match('act=statement$', urllib.parse.unquote(raw.decode('utf8'))):
                 ki = [b64toi(x) for x in d['K_' + login].split()]
                 o, mime, fname = statement(login, ki), 'application/pdf', 'statement.pdf'
-            elif reg(re.match('act=PDF\+receipt&prd=(.+)$', urllib.parse.unquote(raw.decode('utf8')))):
+            elif reg(re.match(r'act=PDF receipt&prd=(.+)$', urllib.parse.unquote_plus(raw.decode('utf8')))):
                 ki = [b64toi(x) for x in d['K_' + login].split()]
                 ig = reg.v.group(1)
                 o, mime, fname = receipt(login, ig, ki), 'application/pdf', 'statement.pdf'
             else:
-                o += 'something wrong in the input text! %s' % raw
+                o += 'something wrong in the input text! %s' % urllib.parse.unquote_plus(raw.decode('utf8'))
         else:
             l, le = raw[:300].split(b'\r\n'), raw[-550:].split(b'\r\n')
             f, fn = len(l[0]) + 6, reg.v.group(1) if reg(re.search('filename="([^"]+)"', l[1].decode('utf8'), re.U)) else 'error'
@@ -180,21 +180,19 @@ def frontpage(today, ip, d, fr, login=''):
 
     if login:
         o += '<text class="alpha" font-size="50pt" x="510" y="70">%s</text>\n' % login
-
-        o += '<foreignObject x="92%%" y="10" width="100" height="30"><div %s><form method="post">\n' % _XHTMLNS
+        o += '<foreignObject x="90%%" y="10" width="100" height="30"><div %s><form method="post">\n' % _XHTMLNS
         o += '<input class="right" type="submit" name="act" value="logout"/>\n'        
         o += '</form></div></foreignObject>\n'
         
         ki = [b64toi(x) for x in d['K_' + login].split()]
         [bal, ovd] = balance(login, ki).split() 
-        o += '<text class="foot" x="20" y="122">Balance: %s ⊔</text><text class="foot" x="20" y="150">Overdraft: %s ⊔</text>\n' % (bal, ovd)
+        o += '<text class="foot" x="20" y="122">Balance: %s ⊔</text><text class="foot" x="20" y="146">Overdraft: %s ⊔</text>\n' % (bal, ovd)
 
-
-        o += '<foreignObject x="92%%" y="40" width="100" height="30"><div %s><form method="post">\n' % _XHTMLNS
+        o += '<foreignObject x="90%%" y="40" width="100" height="30"><div %s><form method="post">\n' % _XHTMLNS
         o += '<input type="submit" name="act" value="statement"/>\n'        
         o += '</form></div></foreignObject>\n'
 
-        o += '<foreignObject x="92%%" y="70" width="100" height="70"><div %s><form method="post">\n' % _XHTMLNS
+        o += '<foreignObject x="90%%" y="70" width="100" height="70"><div %s><form method="post">\n' % _XHTMLNS
         o += '<input type="text" name="val" placeholder="amount" required="yes" title="in your overdraft limit!"/>⊔ <br/>'
         o += '<input type="submit" name="act" value="invoice"/>\n'        
         o += '</form></div></foreignObject>\n'

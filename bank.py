@@ -198,16 +198,20 @@ def pdf_conversion(td, own, val):
     a = updf(595, 842)
     return a.gen([page])
 
-def pdf_test(own, ig, attr, li):
+def pdf_test(own, ig, author, li, nb):
     "_"
     today = '%s' % datetime.datetime.now()
     page = [
         (410,  18, '12F1', today[:19]), 
         (30, 20, '14F1', own), 
         (20, 260, '14F1', 'Intangible Good:'), 
-        (50, 330, '24F1', ig), 
-        (20, 430, '12F3', attr), 
-        (40, 460, '12F3', li[0]), (40, 480, '12F3', li[1]), (40, 500, '12F3', li[2]), (40, 520, '12F3', li[3]), 
+        (50, 310, '24F1', ig), 
+        (20, 350, '12F1', 'Main author:'),      (200, 350, '12F5', author), 
+        (20, 380, '12F1', 'Available date:'),   (200, 380, '12F3', li[0]), 
+        (20, 400, '12F1', 'Initial price:'),    (200, 400, '12F3', '%7.2f' % float(li[1])), (290,  400, '6F1', '⊔'),
+        (20, 420, '12F1', 'Maximum Income:'),   (200, 420, '12F3', '%9.2f' % float(li[2])), (290,  420, '6F1', '⊔'),
+        (20, 440, '12F1', 'Speed (XI):'),       (200, 440, '12F3', li[3]), 
+        (20, 460, '12F1', 'Number of buyers:'), (200, 460, '12F3', '%d' % nb), 
         ] 
     a = updf(595, 842)
     return a.gen([page])
@@ -367,14 +371,14 @@ def application(environ, start_response):
                 Iig, Cig = b'I_' + bytes(ig, 'utf8'), b'C_' + bytes(ig, 'utf8')
                 tab = d[Iig].decode('utf8').split('/')
                 author = tab[4]
-                #nb = len(d[Cig].split('/'))-1
+                nb = len(d[Cig].decode('utf8').split('/'))-1
                 try: author.encode('ascii')
                 except: author = ('%s' % bytes(author, 'utf8'))[2:-1]
                 try: own.encode('ascii')
                 except: own = ('%s' % bytes(own, 'utf8'))[2:-1]
                 try: ig.encode('ascii')
                 except: ig = ('%s' % bytes(ig, 'utf8'))[2:-1]
-                o, mime = pdf_test(own, ig[:-4], author, tab[0:4]), 'application/pdf'
+                o, mime = pdf_test(own, ig[:-4], author, tab[0:4], nb), 'application/pdf'
             else:
                 o += 'pdf receipt reading!'            
         # statement()
