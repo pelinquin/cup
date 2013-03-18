@@ -166,10 +166,12 @@ def frontpage(today, ip, d, fr, login=''):
     "not in html!"
     req = format_cmd(False, 'list', False)
     i, dte, xd, pl = 0, 104 , 40, []
-    size = len(req.split('\n'))
+    size = len(req.split('\n')) - 1
     o = '<?xml version="1.0" encoding="utf8"?>\n' 
-    o += '<svg %s %s height="%d">\n' % (_SVGNS, _XLINKNS, 120+size*dte) + favicon()
-    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica}a,text.a{fill:Dodgerblue}text.foot{font-size:14pt;fill:gray;text-anchor:start}text.foot1{font-size:12pt;fill:gray}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:start}text.note{fill:#CCC;font-size:9pt;text-anchor:end}input,button{padding:5px;margin:1px;border:1px solid #D1D1D2;border-radius:3px;font-size:12px}input[type="text"],input[type="password"]{color:#999;width:66px}input.sid{width:150px}input[type="submit"],button{color:#fff; background-color:#AAA;border:none}input[type="file"]{color:#999}input[type="submit"].blue{background-color:Dodgerblue;font-size:14pt;border-radius:8px}rect{fill:none;stroke:dodgerBlue;stroke-width:.2}input[type="submit"]:hover{background-color:#F87217}input.sh{padding:5px;border-radius:10px;font-size:24px}input.sh[type="text"]{width:400px}</style>\n'
+    o += '<svg %s %s height="%d">\n' % (_SVGNS, _XLINKNS, 225+size*dte) + favicon()
+    o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica}a,text.a{fill:Dodgerblue}text.foot{font-size:14pt;fill:gray;text-anchor:start}text.foot1{font-size:12pt;fill:gray}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:start}text.note{fill:#CCC;font-size:9pt;text-anchor:end}input,button{padding:5px;margin:1px;border:1px solid #D1D1D2;border-radius:3px;font-size:12px}input[type="text"],input[type="password"]{color:#999;width:66px}input.sid{width:150px}input[type="submit"],button{color:#fff; background-color:#AAA;border:none}input[type="file"]{color:#999}input[type="submit"].blue{background-color:Dodgerblue;font-size:14pt;border-radius:8px}input[type="submit"]:hover{background-color:#F87217}input.sh{padding:5px;border-radius:10px;font-size:24px}input.sh[type="text"]{width:400px}</style>\n'
+    o += '<defs><filter id=".shadow" filterUnits="userSpaceOnUse"><feGaussianBlur in="SourceAlpha" result="blur" stdDeviation="2"/><feOffset dy="3" dx="2" in="blur" result="offsetBlur"/><feMerge><feMergeNode in="offsetBlur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>\n'
+
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="80" y="70" font-size="45">%s</text>\n' % __user__
     o += '<a xlink:href="/bank"><text class="a" x="120" y="30">Bank</text></a>\n'
@@ -177,6 +179,8 @@ def frontpage(today, ip, d, fr, login=''):
     o += '<foreignObject x="30%%" y="100" width="600" height="100"><div %s><form method="post">\n' % _XHTMLNS
     o += '<input class="sh" type="text" name="q"/><input class="sh" type="submit" value="IG Search" title="Intangible Goods Search Request"/>\n'
     o += '</form></div></foreignObject>\n'
+
+    o += '<text class="note" x="152" y="170">%d Intangibles Goods</text>\n' % size
 
     if login:
         o += '<text class="alpha" font-size="50pt" x="510" y="70">%s</text>\n' % login
@@ -233,12 +237,15 @@ def frontpage(today, ip, d, fr, login=''):
             i +=1
             p1, pf, n = float(tab[2]), float(tab[3]), int(tab[6])
             k, xi = math.log(pf-p1) - math.log(pf-2*p1), .25 
-            price = (pf - (pf-p1)*math.exp(-xi*n*k))/(n+1)               
-            o += '<text class="note" x="%d" y="%s">%s</text>\n' % (xd+400, ypos+ 60+dte*i, tab[1])
-            o += '<text class="note" x="%d" y="%s" title="main author">%s</text>\n' % (xd+450, ypos+60+dte*i, tab[5])
-            o += '<text class="note" x="%d" y="%s" title="number of buyers">%04d</text>\n' % (xd+310, ypos+60+dte*i, n)
+            price = (pf - (pf-p1)*math.exp(-xi*n*k))/(n+1)
+            income = 100*(pf - (pf-p1)*math.exp(-xi*(n-1)*k))/float(tab[3]) if n>0 else 0
+            o += '<text class="note" x="%d" y="%s">%s</text>\n' % (xd+480, ypos+ 60+dte*i, tab[1])
+            o += '<text class="foot" x="%d" y="%s" title="main author">%s</text>\n' % (xd+530, ypos+60+dte*i, tab[5])
+            o += '<text class="note" x="%d" y="%s" title="number of buyers">%04d</text>\n' % (xd+320, ypos+60+dte*i, n)
+            o += '<text class="note" x="%d" y="%s" title="current income">%5.2f%%</text>\n' % (xd+380, ypos+60+dte*i, income)
             data = base64.b64encode(open(fpng.encode('utf8'), 'rb').read()).decode('ascii')
-            o += '<image x="%s" height="100" width="100" y="%s" xlink:href="data:image/png;base64,%s"/><rect x="%d" height="100" width="100" y="%s"/>\n' % (xd+10, ypos-20+dte*i, data, xd+10, ypos-20+dte*i)
+            o += '<image x="%s" height="100" width="100" y="%s" xlink:href="data:image/png;base64,%s" style="filter:url(#.shadow)"/>\n' % (xd+10, ypos-20+dte*i, data)
+
             o += '<foreignObject x="%s" y="%s" width="80" height="35"><div %s><form method="post">\n' % (xpos, ypos+40+dte*i, _XHTMLNS)
             o += '<input type="hidden" name="ig" value="%s"/>\n' % tab[0]        
             o += '<input type="submit" name="buy" value="%7.2f⊔" title="max income: %s⊔"/>\n' % (price, tab[3])        
