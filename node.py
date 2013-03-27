@@ -170,7 +170,10 @@ def frontpage(today, ip, d, fr, login=''):
     o = '<?xml version="1.0" encoding="utf8"?>\n' 
     o += '<svg %s %s height="%d">\n' % (_SVGNS, _XLINKNS, 225+size*dte) + favicon()
     o += '<style type="text/css">@import url(http://fonts.googleapis.com/css?family=Schoolbell);svg{max-height:100}text,path{stroke:none;fill:Dodgerblue;font-family:helvetica}a,text.a{fill:Dodgerblue}text.foot{font-size:14pt;fill:gray;text-anchor:start}text.foot1{font-size:12pt;fill:gray}text.alpha{font-family:Schoolbell;fill:#F87217;text-anchor:start}text.note{fill:#CCC;font-size:9pt;text-anchor:end}input,button{padding:5px;margin:1px;border:1px solid #D1D1D2;border-radius:3px;font-size:12px}input[type="text"],input[type="password"]{color:#999;width:66px}input.sid{width:150px}input[type="submit"],button{color:#fff; background-color:#AAA;border:none}input[type="file"]{color:#999}input[type="submit"].blue{background-color:Dodgerblue;font-size:14pt;border-radius:8px}input[type="submit"]:hover{background-color:#F87217}input.sh{padding:5px;border-radius:10px;font-size:24px}input.sh[type="text"]{width:400px}</style>\n'
-    o += '<defs><filter id=".shadow" filterUnits="userSpaceOnUse"><feGaussianBlur in="SourceAlpha" result="blur" stdDeviation="2"/><feOffset dy="3" dx="2" in="blur" result="offsetBlur"/><feMerge><feMergeNode in="offsetBlur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>\n'
+    o += '<defs>\n'
+    o += '<filter id=".shadow_old" filterUnits="userSpaceOnUse"><feGaussianBlur in="SourceAlpha" result="blur" stdDeviation="2"/><feOffset dx="1" dy="3" in="blur" result="offsetBlur"/><feMerge><feMergeNode in="offsetBlur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>\n'
+    o += '<filter id=".shadow" filterUnits="userSpaceOnUse"><feOffset result="offOut" in="SourceGraphic" dx="2" dy="3" /><feColorMatrix result="matrixOut" in="offOut" type="matrix" values="0.5 0 0 0 0 0 0.5 0 0 0 0 0 0.5 0 0 0 0 0 1 0" /><feGaussianBlur result="blurOut" in="matrixOut" stdDeviation="2" /><feBlend in="SourceGraphic" in2="blurOut" mode="normal"/></filter>\n'
+    o += '</defs>\n'
 
     o += '<a xlink:href="%s"><path stroke-width="0" d="M10,10L10,10L10,70L70,70L70,10L60,10L60,60L20,60L20,10z"/></a>\n' % __url__
     o += '<text x="80" y="70" font-size="45">%s</text>\n' % __user__
@@ -244,14 +247,14 @@ def frontpage(today, ip, d, fr, login=''):
             o += '<text class="note" x="%d" y="%s" title="number of buyers">%04d</text>\n' % (xd+320, ypos+60+dte*i, n)
             o += '<text class="note" x="%d" y="%s" title="current income">%5.2f%%</text>\n' % (xd+380, ypos+60+dte*i, income)
             data = base64.b64encode(open(fpng.encode('utf8'), 'rb').read()).decode('ascii')
-            o += '<image x="%s" height="100" width="100" y="%s" xlink:href="data:image/png;base64,%s" style="filter:url(#.shadow)"/>\n' % (xd+10, ypos-20+dte*i, data)
+            o += '<image x="%s" height="100" width="100" y="%s" xlink:href="data:image/png;base64,%s" fill="red" filter="url(#.shadow)"/>\n' % (xd+10, ypos-20+dte*i, data)
 
             o += '<foreignObject x="%s" y="%s" width="80" height="35"><div %s><form method="post">\n' % (xpos, ypos+40+dte*i, _XHTMLNS)
             o += '<input type="hidden" name="ig" value="%s"/>\n' % tab[0]        
             o += '<input type="submit" name="buy" value="%7.2f⊔" title="max income: %s⊔"/>\n' % (price, tab[3])        
             o += '</form></div></foreignObject>\n'
             if tab[0] in pl:
-                o += '<foreignObject x="%d" y="%s" width="300" height="35"><div %s><form method="post">\n' % (xpos, ypos+dte*i, _XHTMLNS)
+                o += '<foreignObject x="%d" y="%s" width="400" height="35"><div %s><form method="post">\n' % (xpos, ypos+dte*i, _XHTMLNS)
                 o += '<input class="blue" type="submit" name="get" value="%s"/>\n' % (tab[0][:-4])        
                 o += '</form></div></foreignObject>\n'
                 o += '<foreignObject x="%d" y="%s" width="90" height="35"><div %s><form method="post">\n' % (xpos+70, ypos+40+dte*i, _XHTMLNS)
