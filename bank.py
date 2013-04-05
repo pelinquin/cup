@@ -366,8 +366,6 @@ def application(environ, start_response):
             own, ig, sig = reg.v.group(2), reg.v.group(3), reg.v.group(4)
             Bow, Oow, Pow = b'B_'+bytes(own, 'utf8'), b'O_'+bytes(own, 'utf8'), b'P_' + bytes(own, 'utf8') 
             if verify(RSA_E, b64toi(d[Pow]), '/'.join(('rp', own, ig, today[:10])), bytes(sig, 'ascii')):
-                #for x in d.keys():
-                #    if reg(re.match('T_(.*)$', x.decode('utf8'))):
                 Iig, Cig = b'I_' + bytes(ig, 'utf8'), b'C_' + bytes(ig, 'utf8')
                 tab = d[Iig].decode('utf8').split('/')
                 author = tab[4]
@@ -731,6 +729,38 @@ class updf:
                 other = True
         return o
 
+    def qrcode(self, ox, oy, w, content="none"):
+        o = b'0 0 0 rg '
+        m = ['1111111010011000001111111', 
+             '1000001001110011101000001', 
+             '1011101000000101001011101', 
+             '1011101000001101101011101', 
+             '1011101000000100101011101', 
+             '1000001001110001001000001', 
+             '1111111010101010101111111', 
+             '0000000000101100100000000', 
+             '0111001110111101110000001', 
+             '0000010100101011000011110', 
+             '0000101001101001011010100', 
+             '0000010010000011101000110', 
+             '0100011110011010010110100', 
+             '0110000001111000010100001', 
+             '1100001100100000010011011', 
+             '1010000011110111000010000', 
+             '1010111100011100111110111', 
+             '0000000011100001100011010', 
+             '1111111010111001101011000', 
+             '1000001001101101100010100', 
+             '1011101001000001111110010', 
+             '1011101010111111110101011', 
+             '1011101011000011110011000', 
+             '1000001011110111000101000',
+             '1111111000111010101111111'] 
+        for i in range(len(m)):
+            for j in range(len(m)):
+                if m[i][j] == '1': o += bytes('%d %d %d %d re ' % (ox+i*w, oy-j*w, w, w), 'ascii')
+        return o + b'f '
+
     def gen(self, document):
         "generate a valid binary PDF file, ready for printing!"
         np = len(document)
@@ -743,12 +773,10 @@ class updf:
             t += bytes('BT 1 w 0.9 0.9 0.9 RG %s %s %s %s re S 0 0 0 RG 0 Tc ' % (self.mx, self.my, self.pw-2*self.mx, self.ph-2*self.my), 'ascii')
             t += b'0.99 0.99 0.99 rg 137 150 50 400 re f 137 100 321 50 re f 408 150 50 400 re f '
             t += b'0.88 0.95 1.0 rg 44 600 505 190 re f '
+            t += self.qrcode(498, 788, 2)
             t += b'1.0 1.0 1.0 rg 1 0 0 1 60 680 Tm /F1 60 Tf (Put your Ads here)Tj 0.0 0.0 0.0 rg '
-            t += b'0.9 0.9 0.9 rg 499 740 50 50 re f '
-            t += b'1.0 1.0 1.0 rg 1 0 0 1 512 776 Tm 14 TL /F1 12 Tf (Ads)Tj T* (QR)Tj T* (Code)Tj 0.0 0 0 rg '
             for par in page: t += bytes(self.sgen(par), 'ascii')
             t += b'ET\n'
-            #t1 = bytes('/P <</MCID 0>> BDC BT 1 0 0 1 10 20 Tm /F1 12 Tf (HELLO)Tj ET EMC /Link <</MCID 1>> BDC BT 1 0 0 1 100 20 Tm /F1 16 Tf (With a link)Tj ET EMC', 'ascii')
             self.adds(t)
             ref.append('%s 0 R' % self.i)
         for p, page in enumerate(document):

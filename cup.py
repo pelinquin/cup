@@ -722,7 +722,7 @@ if __name__ == '__main__':
             d.close()
 
     # TEST SIMPLE CRYPTO
-    for x in range(100):
+    for x in range(10):
         k = RSA.generate(1024, os.urandom)
         msg = b'This is a long content!'
         s = sign(k.d, k.n, msg)           # sign
@@ -732,5 +732,5 @@ if __name__ == '__main__':
         print (cc)
 
     #utility()
-
+    import qrcode
 # End ⊔net!
