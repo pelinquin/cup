@@ -485,7 +485,7 @@ if __name__ == '__main__':
     print (msg.decode('ascii'), code.decode('ascii'))
     print (len(msg) + len(code))
 
-    sys.exit()
+    #sys.exit()
     #ssh-keygen -t ecdsa -b 521 -C"this is a test"
     #ssh-keygen -e -f .ssh/id_ecdsa.pub -m PKCS8 > pub
     #ssh-keygen -lf .ssh/id_ecdsa.pub 
@@ -496,6 +496,8 @@ if __name__ == '__main__':
     # -> HTTPS
     # sudo a2enmod ssl
     # sudo e2ensite default-ssl
+
+
 
 
 # End ⊔net!
